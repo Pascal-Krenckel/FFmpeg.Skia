@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>netstandard2.1</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<LangVersion>latest</LangVersion>
+		<AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+		<PackageId>FFmpegDotNet.Skia</PackageId>
+		<Title>FFmpeg.Skia</Title>
+		<Authors>Pascal Krenckel</Authors>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="FFmpegDotNet" Version="1.0.0" />
+		<PackageReference Include="SkiaSharp" Version="3.119.1" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Using Include="SkiaSharp" />
+	</ItemGroup>
+
+</Project>
