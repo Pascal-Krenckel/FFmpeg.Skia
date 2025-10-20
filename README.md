@@ -23,7 +23,7 @@ This library builds on top of the main `FFmpeg` project and offers:
 
 ### 1. Prerequisites
 
-- The [**FFmpeg**](https://www.nuget.org/packages/FFmpegDotNet
+- The [**FFmpeg**](https://www.nuget.org/packages/FFmpegDotNet)
 - [**SkiaSharp**](https://www.nuget.org/packages/SkiaSharp/)
 - FFmpeg binaries (see https://github.com/Pascal-Krenckel/FFmpeg)
 
