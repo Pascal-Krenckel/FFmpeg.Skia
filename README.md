@@ -30,4 +30,4 @@ This library builds on top of the main `FFmpeg` project and offers:
 
 ### Nuget-Package
 
-FFmpegDotNet.Skia
+ [FFmpegDotNet.Skia](https://www.nuget.org/packages/FFmpegDotNet.Skia)
