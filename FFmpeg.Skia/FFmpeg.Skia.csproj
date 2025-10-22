@@ -19,6 +19,8 @@ Enables converting FFmpeg AVFrames to SKImage or SKBitmap, and includes high-lev
 		<RepositoryType>git</RepositoryType>
 		<PackageTags>ffmpeg; skia</PackageTags>
 		<PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+		<Version>1.0.1</Version>
+		<PackageReleaseNotes>BugFix: SKImage subset my reference the original image which got disposed. Now the image does not get disposed. May be disposed by the gc and break. If Frame is not cropped, Subset isn't called anymore, so it shouldn't matter anyways.</PackageReleaseNotes>
 	</PropertyGroup>
 
 	<ItemGroup>
