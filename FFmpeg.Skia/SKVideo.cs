@@ -10,9 +10,10 @@ namespace FFmpeg.Skia
 {
     public class SKVideo(FFCodec2Skia video) : IDisposable
     {
-        private readonly static LimitedConcurrencyLevelTaskScheduler scheduler = new Threading.LimitedConcurrencyLevelTaskScheduler(Environment.ProcessorCount-1);
-        private readonly static TaskFactory factory = new(default,TaskCreationOptions.LongRunning,TaskContinuationOptions.None, scheduler);
-        public static int MaxConcurrencyLevel {get => scheduler.MaximumConcurrencyLevel; set => scheduler.SetMaxDegreeOfParallelism( value); }
+        readonly object _lock = new object();
+        private readonly static LimitedConcurrencyLevelTaskScheduler scheduler = new Threading.LimitedConcurrencyLevelTaskScheduler(Environment.ProcessorCount - 1);
+        private readonly static TaskFactory factory = new(default, TaskCreationOptions.LongRunning, TaskContinuationOptions.None, scheduler);
+        public static int MaxConcurrencyLevel { get => scheduler.MaximumConcurrencyLevel; set => scheduler.SetMaxDegreeOfParallelism(value); }
 
         private readonly FFCodec2Skia video = video ?? throw new ArgumentNullException(nameof(video));
         private bool disposedValue;
@@ -33,8 +34,14 @@ namespace FFmpeg.Skia
 
         public void Start()
         {
-            if (disposedValue) throw new ObjectDisposedException(nameof(SKVideo));
-            if (!decodingTask.IsCompleted) return; // Already running
+            if (disposedValue)
+                throw new ObjectDisposedException(nameof(SKVideo));
+            if (!decodingTask.IsCompleted)
+                return; // Already running
+            lock (_lock)
+            {
+                if (!decodingTask.IsCompleted)
+                    return; // Already running
             cts?.Cancel();
             cts?.Dispose();
             cts = new CancellationTokenSource();
@@ -42,29 +49,47 @@ namespace FFmpeg.Skia
             decodingTask = factory.StartNew(() => DecodingTask(cts.Token), cts.Token);
             Started?.Invoke(this, EventArgs.Empty);
         }
+        }
 
         public void Pause()
         {
-            if (disposedValue) throw new ObjectDisposedException(nameof(SKVideo));
-            if (decodingTask.IsCompleted) return; // Not running
+            if (disposedValue)
+                throw new ObjectDisposedException(nameof(SKVideo));
+            if (decodingTask.IsCompleted)
+                return; // Not running
             cts.Cancel();
             Paused?.Invoke(this, EventArgs.Empty);
         }
 
         public void Resume()
         {
-            if (disposedValue) throw new ObjectDisposedException(nameof(SKVideo));
-            if (!decodingTask.IsCompleted) return; // Already running
+            if (disposedValue)
+                throw new ObjectDisposedException(nameof(SKVideo));
+            if (!decodingTask.IsCompleted)
+                return; // Already running
+            lock (_lock)
+            {
+                if (!decodingTask.IsCompleted)
+                    return; // Already running
             cts?.Dispose();
             cts = new CancellationTokenSource();
             decodingTask = factory.StartNew(() => DecodingTask(cts.Token), cts.Token);
             Resumed?.Invoke(this, EventArgs.Empty);
         }
+        }
 
         public void Stop()
         {
-            if (disposedValue) throw new ObjectDisposedException(nameof(SKVideo));
-            if (decodingTask.IsCompleted) return; // Not running
+            if (disposedValue)
+                throw new ObjectDisposedException(nameof(SKVideo));
+            if (decodingTask.IsCompleted)
+                return; // Not running
+            lock (_lock)
+            {
+                if (!decodingTask.IsCompleted)
+                    return; // Already running
+
+
             cts.Cancel();
             var source = cts;
             decodingTask.ContinueWith(t =>
@@ -74,10 +99,12 @@ namespace FFmpeg.Skia
             });
             cts.Dispose();
         }
+        }
 
         public void Restart()
         {
-            if (disposedValue) throw new ObjectDisposedException(nameof(SKVideo));
+            if (disposedValue)
+                throw new ObjectDisposedException(nameof(SKVideo));
             if (decodingTask.IsCompleted)
             {
                 _ = video.Restart();
@@ -89,16 +116,24 @@ namespace FFmpeg.Skia
 
         public AVResult32 Seek(TimeSpan timeSpan)
         {
-            if (disposedValue) throw new ObjectDisposedException(nameof(SKVideo));
+            if (disposedValue)
+                throw new ObjectDisposedException(nameof(SKVideo));
+            lock (_lock)
+            {
             renewTimer = true; // Reset the timer for the new seek position
             return video.Seek(timeSpan);
+        }
         }
 
         public AVResult32 Seek(long frameIndex)
         {
-            if (disposedValue) throw new ObjectDisposedException(nameof(SKVideo));
+            if (disposedValue)
+                throw new ObjectDisposedException(nameof(SKVideo));
+            lock (_lock)
+            {
             renewTimer = true; // Reset the timer for the new seek position
             return video.Seek(frameIndex);
+        }
         }
         private bool renewTimer = false;
         private void DecodingTask(CancellationToken token)
@@ -114,6 +149,9 @@ namespace FFmpeg.Skia
             {
                 while (!token.IsCancellationRequested)
                 {
+                    lock (_lock)
+                    {
+
                     if (backbuffer != null)
                     {
                         if (!video.NextImage(backbuffer, out frameInfo))
@@ -127,7 +165,6 @@ namespace FFmpeg.Skia
                         backbuffer = video.NextImage(out frameInfo);
                     }
 
-
                     if (backbuffer == null)
                     {
                         Ended?.Invoke(this, EventArgs.Empty);
@@ -139,6 +176,8 @@ namespace FFmpeg.Skia
                         timer.Restart();
                         renewTimer = false;
                     }
+                    }
+
                     var timeToSleep = frameInfo.TimeStamp - timer.Elapsed - firstFrame;
 
                     if (timeToSleep > TimeSpan.Zero)
@@ -227,7 +266,10 @@ namespace FFmpeg.Skia
                 {
                     cts.Cancel();
                     cts.Dispose();
+                    bool entered = Monitor.TryEnter(_lock, 1000);
                     video.Dispose();
+                    if (entered)
+                        Monitor.Exit(_lock);
                 }
 
                 // TODO: Nicht verwaltete Ressourcen (nicht verwaltete Objekte) freigeben und Finalizer überschreiben
