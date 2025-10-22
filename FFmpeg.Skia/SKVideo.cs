@@ -21,7 +21,7 @@ namespace FFmpeg.Skia
         
         #region Properties
         public bool Disposed => disposedValue;
-        public TimeSpan Duration => Frames / video.FrameRate;
+        public TimeSpan Duration => video.Duration;
         public SKImageInfo Info => video.Info;
         public long Frames => video.Frames;
         public Rational FrameRate => video.FrameRate;

@@ -22,6 +22,8 @@ public sealed class FFCodec2Skia : IDisposable
     public long Frames { get; }
     public Rational FrameRate { get; }
 
+    public TimeSpan Duration { get; }
+
     private FFCodec2Skia(MediaSource mediaSource, int streamIndex, int targetWidth, int targetHeight, SKColorType colorType)
     {
         this.mediaSource = mediaSource;
@@ -42,6 +44,7 @@ public sealed class FFCodec2Skia : IDisposable
         else if (colorType == SKColorType.Unknown) colorType = SKImageInfo.PlatformColorType.IsSupportedFFmpegFormat() ? SKImageInfo.PlatformColorType : SKColorType.Rgba8888;
         frame = AVFrame.Allocate();
         Frames = mediaSource.Streams[streamIndex].NumberOfFrames;
+        Duration = mediaSource.Streams[streamIndex].Duration * mediaSource.Streams[streamIndex].TimeBase;
         FrameRate = mediaSource.CodecContexts[streamIndex].FrameRate;
 
         Info = new SKImageInfo(targetWidth, targetHeight, colorType);
@@ -77,7 +80,7 @@ public sealed class FFCodec2Skia : IDisposable
         frameInfo = new()
         {
             Duration = frame.Duration * frame.TimeBase,
-            TimeStamp = frame.BestEffortTimestamp * frame.TimeBase,
+            TimeStamp = frame.GetPresentationTimestamp() * frame.TimeBase,
         };
         if (CheckCopy(skImage.Info))
         {            
