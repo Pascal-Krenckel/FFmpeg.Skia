@@ -25,6 +25,8 @@ namespace FFmpeg.Skia
         public SKImageInfo Info => video.Info;
         public long Frames => video.Frames;
         public Rational FrameRate => video.FrameRate;
+
+        public bool Running => !decodingTask.IsCompleted;
         #endregion
 
         #region Methods
@@ -171,6 +173,10 @@ namespace FFmpeg.Skia
         public event EventHandler? Paused;
         public event EventHandler? Resumed;
         public event EventHandler? Stopped;
+
+        /// <summary>
+        /// Will be raised when the next frame should be drawn. DO NOT dispose frame!
+        /// </summary>
         public event EventHandler<(SKBitmap frame, FFCodecFrameInfo frameInfo)>? FrameReadyToRender;
         #endregion
 
