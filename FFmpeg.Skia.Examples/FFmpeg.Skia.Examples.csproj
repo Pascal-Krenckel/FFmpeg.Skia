@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		<TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<UseWPF>true</UseWPF>
+		<SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="FFmpegDotNet" Version="8.0.0.1" />
+		<PackageReference Include="FFmpegDotNet.bin.winx64" Version="8.0.0" />
+		<PackageReference Include="SkiaSharp.Views.WPF" Version="3.119.1" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <ProjectReference Include="..\FFmpeg.Skia\FFmpeg.Skia.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Update="mp4-example-video-download-full-hd-1920x1080.1min.mp4">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
+</Project>
