@@ -27,7 +27,7 @@ namespace FFmpeg.Skia
         public long Frames => video.Frames;
         public Rational FrameRate => video.FrameRate;
 
-        public bool Running => !decodingTask.IsCompleted;
+        public FFCodecFrameInfo CurrentFrameInfo { get; private set; } = default;
         #endregion
 
         #region Methods
@@ -194,6 +194,7 @@ namespace FFmpeg.Skia
                         
                         (frame, backbuffer) = (backbuffer, frame); // Swap buffers
                     }
+                    CurrentFrameInfo = frameInfo;
                 }
             }
             finally
