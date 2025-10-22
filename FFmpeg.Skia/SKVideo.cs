@@ -186,10 +186,10 @@ namespace FFmpeg.Skia
                     if (FrameReadyToRender != null && eventTask.IsCompleted)
                     {
                         var f = backbuffer; // Capture the current frame
-                        
+                        var info = frameInfo; // Capture frameInfo
                         eventTask = Task.Run(() =>
                                        {                                        
-                                           FrameReadyToRender(this, (f, frameInfo));
+                                           FrameReadyToRender(this, (f, info));
                                        }, token);
                         
                         (frame, backbuffer) = (backbuffer, frame); // Swap buffers
