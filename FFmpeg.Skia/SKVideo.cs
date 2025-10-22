@@ -26,6 +26,7 @@ namespace FFmpeg.Skia
         public SKImageInfo Info => video.Info;
         public long Frames => video.Frames;
         public Rational FrameRate => video.FrameRate;
+        public bool Running => !decodingTask.IsCompleted;
 
         public FFCodecFrameInfo CurrentFrameInfo { get; private set; } = default;
         #endregion
