@@ -79,16 +79,22 @@ public static class Extensions
         SKColorType colorType = pixfmt.IsSupportedSkiaColorType() ? pixfmt.ToSkiaColorType() : SKImageInfo.PlatformColorType;
         if (!colorType.IsSupportedFFmpegFormat()) colorType = SKColorType.Rgba8888; // make sure that platform color type is correct
         bool justCopy = colorType.ToPixelFormat() == pixfmt;
-        SKImageInfo info = new(width, height, colorType);
+        SKImageInfo info = new(width, height, colorType, SKAlphaType.Unpremul);
 
-        using SKImage skImage = SKImage.Create(info);
-        using var pixmap = skImage.PeekPixels();
+        SKImage skImage = SKImage.Create(info);
+        try
+        {
+            using var pixmap = skImage.PeekPixels();
 
-        if (justCopy)
-            CopyFrame(frame, pixmap);
-        else
-            Images.SwsContext.Convert(frame, pixmap.GetPixels(), new(width, height, colorType.ToPixelFormat()), Images.SwsAlgorithm.FastBilinear()).ThrowIfError();
-        return skImage.Subset(frame.CroppedRect());
+            if (justCopy)
+                CopyFrame(frame, pixmap);
+            else
+                Images.SwsContext.Convert(frame, pixmap.GetPixels(), new(width, height, colorType.ToPixelFormat()), Images.SwsAlgorithm.FastBilinear()).ThrowIfError();
+            if (frame.CropRight == 0 && frame.CropLeft == 0 && frame.CropTop == 0 && frame.CropBottom == 0)
+                return skImage;
+            return skImage.Subset(frame.CroppedRect());
+        }
+        catch { skImage.Dispose(); throw; }
     }
 
     public static SKRectI CroppedRect(this AVFrame frame) => new SKRectI((int)frame.CropLeft, (int)frame.CropTop, frame.CroppedWidth + (int)frame.CropLeft, frame.CroppedHeight + (int)frame.CropBottom);
@@ -103,7 +109,7 @@ public static class Extensions
         SKColorType colorType = pixfmt.IsSupportedSkiaColorType() ? pixfmt.ToSkiaColorType() : SKImageInfo.PlatformColorType;
         if (!colorType.IsSupportedFFmpegFormat()) colorType = SKColorType.Rgba8888; // make sure that platform color type is correct
         bool justCopy = colorType.ToPixelFormat() == pixfmt;
-        SKImageInfo info = new(width, height, colorType);
+        SKImageInfo info = new(width, height, colorType, SKAlphaType.Unpremul);
 
         SKBitmap skImage = new(info);
         try
@@ -113,8 +119,11 @@ public static class Extensions
                 CopyFrame(frame, pixmap);
             else
                 Images.SwsContext.Convert(frame, pixmap.GetPixels(), new(width, height, colorType.ToPixelFormat()), Images.SwsAlgorithm.FastBilinear()).ThrowIfError();
-            SKBitmap croppedImage = new();
-            skImage.ExtractSubset(croppedImage, frame.CroppedRect());
+            SKBitmap croppedImage;
+            if (frame.CropLeft == 0 && frame.CropRight == 0 && frame.CropTop == 0 && frame.CropBottom == 0)
+                return skImage;
+            croppedImage = new();
+            skImage.ExtractSubset(croppedImage, frame.CroppedRect());            
             skImage.Dispose();
             return croppedImage;
         }
@@ -132,14 +141,13 @@ public static class Extensions
         var srcFormat = frame.PixelFormat;
         if (srcFormat.IsSupportedSkiaColorType() && srcFormat.ToSkiaColorType() == colorType) return ToSkiaImage(frame);
         if (frame.Width < 0 || frame.Height < 0) throw new ArgumentException();
-        SKImageInfo info = new(frame.Width, frame.Height, colorType);
+        SKImageInfo info = new(frame.Width, frame.Height, colorType, SKAlphaType.Unpremul);
         SKImage skImage = SKImage.Create(info);
         try
         {
             using var pixmap = skImage.PeekPixels();
             Images.SwsContext.Convert(frame, pixmap.GetPixels(), new(pixmap.Width, pixmap.Height, colorType.ToPixelFormat()), Images.SwsAlgorithm.FastBilinear()).ThrowIfError();
             var image = skImage.Subset(frame.CroppedRect());
-            skImage.Dispose();
             return image;
         }
         catch
@@ -155,13 +163,24 @@ public static class Extensions
         var srcFormat = frame.PixelFormat;
         if (srcFormat.IsSupportedSkiaColorType() && srcFormat.ToSkiaColorType() == colorType) return ToSkiaBitmap(frame);
         if (frame.Width < 0 || frame.Height < 0) throw new ArgumentException();
-        SKImageInfo info = new(frame.Width, frame.Height, colorType);
-        using SKBitmap skImage = new(info);
-        using var pixmap = skImage.PeekPixels();
-        Images.SwsContext.Convert(frame, pixmap.GetPixels(), new(pixmap.Width, pixmap.Height, colorType.ToPixelFormat()), Images.SwsAlgorithm.FastBilinear()).ThrowIfError();
-        SKBitmap bitmap = new();
-        skImage.ExtractSubset(bitmap, frame.CroppedRect());
-        return bitmap;
+        SKImageInfo info = new(frame.Width, frame.Height, colorType, SKAlphaType.Unpremul);
+        SKBitmap skImage = new(info);
+        try
+        {
+            using var pixmap = skImage.PeekPixels();
+            Images.SwsContext.Convert(frame, pixmap.GetPixels(), new(pixmap.Width, pixmap.Height, colorType.ToPixelFormat()), Images.SwsAlgorithm.FastBilinear()).ThrowIfError();
+            if (frame.CropLeft == 0 && frame.CropTop == 0 && frame.CropRight == 0 && frame.CropBottom == 0)
+                return skImage;
+            SKBitmap bitmap = new();
+            skImage.ExtractSubset(bitmap, frame.CroppedRect());
+            skImage.Dispose();
+            return bitmap;
+        }
+        catch
+        {
+            skImage.Dispose();
+            throw;
+        }
 
     }
 
