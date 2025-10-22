@@ -1,4 +1,5 @@
-﻿using SkiaSharp;
+﻿#define Copy
+using SkiaSharp;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -23,7 +24,11 @@ public partial class Videoplayer : Window
     readonly object _lock = new();
     const string file = "mp4-example-video-download-full-hd-1920x1080.1min.mp4";
     readonly SKVideo skvideo = new SKVideo(file);
-    readonly SkiaSharp.SKBitmap bitmap = new();
+#if Copy
+    SkiaSharp.SKBitmap bitmap = new(); // <- dispose at window unload
+#else 
+    SkiaSharp.SKBitmap? bitmap;
+#endif
     FFmpeg.Skia.FFCodecFrameInfo frameInfo;
     public Videoplayer()
     {
@@ -34,17 +39,21 @@ public partial class Videoplayer : Window
 
     private void Skvideo_FrameReadyToRender(object? sender, (SkiaSharp.SKBitmap frame, FFCodecFrameInfo frameInfo) e)
     {
+#if Copy
         if (bitmap.DrawsNothing)
             _ = bitmap.TryAllocPixels(e.frame.Info);
-        
+
         e.frame.GetPixelSpan().CopyTo(bitmap.GetPixelSpan());
-        frameInfo = e.frameInfo;
         bitmap.NotifyPixelsChanged();
+#else
+        frameInfo = e.frameInfo;
+        bitmap = e.frame;
+#endif
     }
     private void canvas_PaintSurface(object sender, SkiaSharp.Views.Desktop.SKPaintGLSurfaceEventArgs e)
     {
         e.Surface.Canvas.Clear();
-        if (!bitmap.DrawsNothing)
+        if (bitmap != null && !bitmap.DrawsNothing)
         {
             var dest = e.Surface.Canvas.DeviceClipBounds.AspectFit(bitmap.Info.Size);
             e.Surface.Canvas.DrawBitmap(bitmap, dest, new SKPaint() { FilterQuality = SKFilterQuality.High }); // DrawBitmap does not have the right override, yet.          
@@ -97,6 +106,8 @@ public partial class Videoplayer : Window
     private void Window_Unloaded(object sender, RoutedEventArgs e)
     {
         skvideo.Dispose();
+#if Copy
         bitmap.Dispose();
+#endif
     }
 }
