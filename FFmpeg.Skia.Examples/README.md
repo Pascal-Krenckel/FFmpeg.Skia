@@ -45,3 +45,31 @@ To get started with this project, you can install the dependencies using the fol
 
 ```bash
 dotnet restore
+```
+
+## Examples
+
+### Videoplayer
+
+Videoplayer uses FFmpeg.Skia.SKVideo to render the video frames.
+```csharp
+    private void Skvideo_FrameReadyToRender(object? sender, (SkiaSharp.SKBitmap frame, FFCodecFrameInfo frameInfo) e)
+    {
+        if (bitmap.DrawsNothing)
+            _ = bitmap.TryAllocPixels(e.frame.Info);
+        
+        e.frame.GetPixelSpan().CopyTo(bitmap.GetPixelSpan());
+        frameInfo = e.frameInfo;
+        bitmap.NotifyPixelsChanged();
+    }
+```
+You could just save a reference to the front buffer instead of copying the data.
+The SKBitmap stays valid until SKVideo gets disposed. However you may not draw or dispose the frame, as it is one of the buffers the AVFrame will be copied into.
+
+```csharp
+    private void Skvideo_FrameReadyToRender(object? sender, (SkiaSharp.SKBitmap frame, FFCodecFrameInfo frameInfo) e)
+    {
+        frameInfo = e.frameInfo;
+        bitmap = e.frame;
+    }
+```
