@@ -10,8 +10,10 @@
 		<PackageId>FFmpegDotNet.Skia</PackageId>
 		<Title>FFmpeg.Skia</Title>
 		<Authors>Pascal Krenckel</Authors>
-		<Description>Provides SkiaSharp integration for the FFmpeg .NET wrapper.
-Enables converting FFmpeg AVFrames to SKImage or SKBitmap, and includes high-level classes (FFCodec2Skia, SKVideo) for decoding and rendering videos or images with Skia.</Description>
+		<Description>
+			Provides SkiaSharp integration for the FFmpeg .NET wrapper.
+			Enables converting FFmpeg AVFrames to SKImage or SKBitmap, and includes high-level classes (FFCodec2Skia, SKVideo) for decoding and rendering videos or images with Skia.
+		</Description>
 		<Copyright>Copyright (c) 2025 Pascal Krenckel. All rights reserved.</Copyright>
 		<PackageProjectUrl>https://github.com/Pascal-Krenckel/FFmpeg.Skia</PackageProjectUrl>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
@@ -19,19 +21,24 @@ Enables converting FFmpeg AVFrames to SKImage or SKBitmap, and includes high-lev
 		<RepositoryType>git</RepositoryType>
 		<PackageTags>ffmpeg; skia</PackageTags>
 		<PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
-		<Version>1.0.1</Version>
-		<PackageReleaseNotes>BugFix: SKImage subset my reference the original image which got disposed. Now the image does not get disposed. May be disposed by the gc and break. If Frame is not cropped, Subset isn't called anymore, so it shouldn't matter anyways.</PackageReleaseNotes>
+		<Version>1.0.2</Version>
+		<PackageReleaseNotes>
+			Biggest changes:
+			Added thread safety for SKVideo.
+			FrameInfo is not a captured local variable to avaid concurrent rw.
+			The back buffer and front buffer are now class members and stay valid aslong as the SKVideo is not disposed.
+		</PackageReleaseNotes>
 	</PropertyGroup>
 
 	<ItemGroup>
-	  <None Include="..\LICENSE.txt">
-	    <Pack>True</Pack>
-	    <PackagePath>\</PackagePath>
-	  </None>
-	  <None Include="..\README.md">
-	    <Pack>True</Pack>
-	    <PackagePath>\</PackagePath>
-	  </None>
+		<None Include="..\LICENSE.txt">
+			<Pack>True</Pack>
+			<PackagePath>\</PackagePath>
+		</None>
+		<None Include="..\README.md">
+			<Pack>True</Pack>
+			<PackagePath>\</PackagePath>
+		</None>
 	</ItemGroup>
 
 	<ItemGroup>
@@ -40,7 +47,7 @@ Enables converting FFmpeg AVFrames to SKImage or SKBitmap, and includes high-lev
 	</ItemGroup>
 
 	<ItemGroup>
-	  <Using Include="SkiaSharp" />
+		<Using Include="SkiaSharp" />
 	</ItemGroup>
 
 </Project>
