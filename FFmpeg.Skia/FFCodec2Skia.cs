@@ -54,6 +54,7 @@ public sealed class FFCodec2Skia : IDisposable
 
     public SKBitmap? NextImage(out FFCodecFrameInfo frameInfo)
     {
+        CheckDisposed();
         SKBitmap image = new(Info);
         try
         {
@@ -67,10 +68,14 @@ public sealed class FFCodec2Skia : IDisposable
         }
     }
 
+    private void CheckDisposed()
+    {
+        if (disposedValue) throw new ObjectDisposedException(GetType().FullName);
+    }
+
     public bool NextImage(SKBitmap skImage, out FFCodecFrameInfo frameInfo)
     {
-
-        if (disposedValue) throw new ObjectDisposedException(GetType().FullName);
+        CheckDisposed();
         frameInfo = default;
         AVResult32 res;
         do
@@ -83,11 +88,18 @@ public sealed class FFCodec2Skia : IDisposable
             TimeStamp = frame.GetPresentationTimestamp() * frame.TimeBase,
         };
         if (CheckCopy(skImage.Info))
-        {            
-            Extensions.CopyFrame(frame,skImage);
+        {
+            Extensions.CopyFrame(frame, skImage);
         }
         else
         {
+            if (skImage.DrawsNothing)
+            {
+                var colorType = frame.PixelFormat.ToBestSkiaColorType();
+                if (!skImage.TryAllocPixels(new(frame.Width, frame.Height, colorType, SKAlphaType.Unpremul)))
+                    return false;
+            }
+            else if (!skImage.Info.ColorType.IsSupportedFFmpegFormat()) return false;
             swsContext = GetSwsContext(frame, skImage.Info);
             swsContext.Convert(frame, skImage.GetPixels()).ThrowIfError();
         }
@@ -95,8 +107,17 @@ public sealed class FFCodec2Skia : IDisposable
         return true;
     }
 
-    public AVResult32 Seek(TimeSpan time) => mediaSource.Seek(time, streamIndex);
-    public AVResult32 Seek(long frame) => mediaSource.Seek(frame, streamIndex);
+    public AVResult32 Seek(TimeSpan time)
+    {
+        CheckDisposed();
+        return mediaSource.Seek(time, streamIndex);
+    }
+
+    public AVResult32 Seek(long frame)
+    {
+        CheckDisposed();
+        return mediaSource.Seek(frame, streamIndex);
+    }
 
     public AVResult32 Restart() => Seek(0);
 
@@ -105,6 +126,7 @@ public sealed class FFCodec2Skia : IDisposable
         if (swsContext != null && frame.Width == swsContext.SourceWidth && frame.Height == swsContext.SourceHeight && frame.Format == (int)swsContext.SourceFormat)
             return swsContext;
         swsContext?.Dispose();
+
         if (frame.Width == info.Width && frame.Height == info.Height)
             swsContext = new SwsContext(frame.Width, frame.Height, frame.PixelFormat, info.Width, info.Height, info.ColorType.ToPixelFormat(), SwsAlgorithm.FastBilinear());
         else
@@ -114,8 +136,8 @@ public sealed class FFCodec2Skia : IDisposable
 
     private bool CheckCopy(SKImageInfo info)
     {
-        return frame.CroppedWidth == info.Width 
-            && frame.CroppedHeight == info.Height 
+        return frame.CroppedWidth == info.Width
+            && frame.CroppedHeight == info.Height
             && frame.PixelFormat == info.ColorType.ToPixelFormat();
     }
 
