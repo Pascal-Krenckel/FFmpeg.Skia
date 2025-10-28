@@ -45,7 +45,7 @@ public partial class FF2SkiaCodecWindow : Window
                         codec.Restart(); // automatically restart if finished or error
                 }
                 this.frameInfo = frameInfo;
-                Task.Delay(frameInfo.Duration, token).Wait(token);
+                Task.Delay(frameInfo.Duration, token).Wait(token); // wait until next frame should be displayed
             }
         }
         catch (OperationCanceledException) { }

@@ -49,7 +49,7 @@ dotnet restore
 
 ## Examples
 
-### Videoplayer
+### Videoplayer.xaml
 
 Videoplayer uses FFmpeg.Skia.SKVideo to render the video frames.
 ```csharp
@@ -71,5 +71,32 @@ The SKBitmap stays valid until SKVideo gets disposed. However you may not draw o
     {
         frameInfo = e.frameInfo;
         bitmap = e.frame;
+    }
+```
+
+### FF2SkiaCodecWindows.xaml
+
+Instead of using SKVideo this uses FF2SkiaCodec directly.
+
+```csharp
+    private void DecodingTask(object? obj)
+    {
+        // just for concurrent rw
+        FFCodecFrameInfo frameInfo;
+        if (obj is not CancellationToken token) throw new ArgumentException("obj must be an CancellationToken");
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                lock (codec)
+                {
+                    if (!codec.NextImage(skBitmap, out frameInfo))
+                        codec.Restart(); // automatically restart if finished or error
+                }
+                this.frameInfo = frameInfo;
+                Task.Delay(frameInfo.Duration, token).Wait(token); // wait until next frame should be displayed
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 ```
