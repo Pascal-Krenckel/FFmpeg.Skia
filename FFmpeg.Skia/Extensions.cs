@@ -1,9 +1,38 @@
-﻿using FFmpeg.Images;
+﻿using FFmpeg.AutoGen;
+using FFmpeg.Images;
 using AVFrame = FFmpeg.Utils.AVFrame;
 
 namespace FFmpeg.Skia;
 public static class Extensions
 {
+
+    public static PixelFormat[] SKSupportedPixelFormats { get; } =
+    [
+        PixelFormat.BGRA,
+        PixelFormat.Gray8,
+        PixelFormat.RGBX,
+        PixelFormat.RGBA,
+        PixelFormat.RGB565LE,
+        PixelFormat.RGBAF16LE,
+        PixelFormat.RGBAF32LE
+    ];
+
+    public static SKColorType[] FFSupportedColorTypes { get; } =
+    [
+        SKColorType.Bgra8888,
+        SKColorType.Rgb888x,
+        SKColorType.Rgba8888,
+        SKColorType.Rgb565,
+        SKColorType.Gray8,
+        SKColorType.RgbaF16,
+        SKColorType.RgbaF32,
+    ];
+
+    /// <summary>
+    /// True, if the PixelFormat is skia supported [bgra,gray8,rgbx,rgba,rgb565le,rgbaf16le, rgbaf65le]
+    /// </summary>
+    /// <param name="pixFmt">The ffmpeg pixelformat to test</param>
+    /// <returns></returns>
     public static bool IsSupportedSkiaColorType(this PixelFormat pixFmt) => pixFmt switch
     {
         PixelFormat.BGRA => true,
@@ -16,6 +45,11 @@ public static class Extensions
         _ => false,
     };
 
+    /// <summary>
+    /// True if the SKColorType is a ffmpeg pixelFormat [bgra,gray8,rgbx,rgba,rgb565le,rgbaf16le, rgbaf65le]
+    /// </summary>
+    /// <param name="pixelFormat"></param>
+    /// <returns></returns>
     public static bool IsSupportedFFmpegFormat(this SKColorType pixelFormat) => pixelFormat switch
     {
         SkiaSharp.SKColorType.Bgra8888 => true,
@@ -28,6 +62,12 @@ public static class Extensions
         _ => false,
     };
 
+    /// <summary>
+    /// Converts the SKColorType into a PixelFormat, if it is supported. Throws otherwise.
+    /// </summary>
+    /// <param name="pixelFormat"></param>
+    /// <returns></returns>
+    /// <exception cref="NotSupportedException">The SKColorType has no </exception>
     public static PixelFormat ToPixelFormat(this SKColorType pixelFormat) => pixelFormat switch
     {
         SkiaSharp.SKColorType.Bgra8888 => PixelFormat.BGRA,
@@ -56,6 +96,7 @@ public static class Extensions
         _ => throw new NotSupportedException(),
     };
 
+
     public static SKColorType ToSkiaColorType(this PixelFormat pixelFormat) => pixelFormat switch
     {
         PixelFormat.BGRA => SkiaSharp.SKColorType.Bgra8888,
@@ -68,6 +109,11 @@ public static class Extensions
         PixelFormat.RGBAF32LE => SkiaSharp.SKColorType.RgbaF32,
         _ => throw new NotSupportedException(),
     };
+
+    public static SKColorType ToBestSkiaColorType(this PixelFormat pixelFormat) => pixelFormat.IsSupportedSkiaColorType() ? 
+        pixelFormat.ToSkiaColorType() :
+        pixelFormat.FindBestPixelFormat(SKSupportedPixelFormats).ToSkiaColorType();
+
 
     public static SKImage ToSkiaImage(this AVFrame frame)
     {
@@ -123,7 +169,7 @@ public static class Extensions
             if (frame.CropLeft == 0 && frame.CropRight == 0 && frame.CropTop == 0 && frame.CropBottom == 0)
                 return skImage;
             croppedImage = new();
-            skImage.ExtractSubset(croppedImage, frame.CroppedRect());            
+            skImage.ExtractSubset(croppedImage, frame.CroppedRect());
             skImage.Dispose();
             return croppedImage;
         }
