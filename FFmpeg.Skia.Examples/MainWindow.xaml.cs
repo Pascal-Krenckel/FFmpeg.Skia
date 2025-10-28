@@ -34,9 +34,15 @@ public partial class MainWindow : Window
     {
     }
 
-    private void Button_Click(object sender, RoutedEventArgs e)
+    private void Button_PlaySKVideo(object sender, RoutedEventArgs e)
     {
         Videoplayer vp = new Videoplayer();
         vp.ShowDialog();
+    }
+
+    private void Button_PlayFFCodec2Skia(object sender, RoutedEventArgs e)
+    {
+        FF2SkiaCodecWindow f = new();
+        f.ShowDialog();
     }
 }

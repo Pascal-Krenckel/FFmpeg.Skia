@@ -7,6 +7,12 @@
         mc:Ignorable="d"
         Title="MainWindow" Height="450" Width="800" Loaded="Window_Loaded">
     <Grid>
-        <Button Content="Play Video" Click="Button_Click"/>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition/>
+            <ColumnDefinition/>
+        </Grid.ColumnDefinitions>
+        <Button Content="Play Video (SKVideo)" Click="Button_PlaySKVideo"/>
+        <Button Content="Play Video (FFCodec2Skia)" Click="Button_PlayFFCodec2Skia" Grid.Column="1"/>
+
     </Grid>
 </Window>
