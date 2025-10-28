@@ -35,7 +35,7 @@ Enables converting FFmpeg AVFrames to SKImage or SKBitmap, and includes high-lev
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="FFmpegDotNet" Version="1.0.0" />
+		<PackageReference Include="FFmpegDotNet" Version="8.0.0.2" />
 		<PackageReference Include="SkiaSharp" Version="3.119.1" />
 	</ItemGroup>
 
