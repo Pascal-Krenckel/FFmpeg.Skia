@@ -45,4 +45,10 @@ public partial class MainWindow : Window
         FF2SkiaCodecWindow f = new();
         f.ShowDialog();
     }
+
+    private void Button_PlayMediaSource(object sender, RoutedEventArgs e)
+    {
+        MediaSourceWindow w = new();
+        w.ShowDialog();
+    }
 }
