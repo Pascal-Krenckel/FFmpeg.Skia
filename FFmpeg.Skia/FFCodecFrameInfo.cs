@@ -1,8 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿namespace FFmpeg.Skia;
 
-namespace FFmpeg.Skia;
 public readonly struct FFCodecFrameInfo : IEquatable<FFCodecFrameInfo>
 {
     public TimeSpan Duration { get; init; }
@@ -15,5 +12,5 @@ public readonly struct FFCodecFrameInfo : IEquatable<FFCodecFrameInfo>
     public static bool operator ==(FFCodecFrameInfo left, FFCodecFrameInfo right) => left.Equals(right);
     public static bool operator !=(FFCodecFrameInfo left, FFCodecFrameInfo right) => !(left == right);
 
-    public override string ToString() => $"{TimeStamp} -> {TimeStamp+Duration}";
+    public override string ToString() => $"{TimeStamp} -> {TimeStamp + Duration}";
 }

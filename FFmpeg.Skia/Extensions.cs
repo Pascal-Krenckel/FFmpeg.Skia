@@ -1,8 +1,8 @@
-﻿using FFmpeg.AutoGen;
-using FFmpeg.Images;
+﻿using FFmpeg.Images;
 using AVFrame = FFmpeg.Utils.AVFrame;
 
 namespace FFmpeg.Skia;
+
 public static class Extensions
 {
 
@@ -110,7 +110,7 @@ public static class Extensions
         _ => throw new NotSupportedException(),
     };
 
-    public static SKColorType ToBestSkiaColorType(this PixelFormat pixelFormat) => pixelFormat.IsSupportedSkiaColorType() ? 
+    public static SKColorType ToBestSkiaColorType(this PixelFormat pixelFormat) => pixelFormat.IsSupportedSkiaColorType() ?
         pixelFormat.ToSkiaColorType() :
         pixelFormat.FindBestPixelFormat(SKSupportedPixelFormats).ToSkiaColorType();
 
@@ -123,27 +123,28 @@ public static class Extensions
         if (width <= 0 || height <= 0)
             throw new ArgumentException("Invalid image size");
         SKColorType colorType = pixfmt.IsSupportedSkiaColorType() ? pixfmt.ToSkiaColorType() : SKImageInfo.PlatformColorType;
-        if (!colorType.IsSupportedFFmpegFormat()) colorType = SKColorType.Rgba8888; // make sure that platform color type is correct
+        if (!colorType.IsSupportedFFmpegFormat())
+            colorType = SKColorType.Rgba8888; // make sure that platform color type is correct
         bool justCopy = colorType.ToPixelFormat() == pixfmt;
         SKImageInfo info = new(width, height, colorType, SKAlphaType.Unpremul);
 
         SKImage skImage = SKImage.Create(info);
         try
         {
-            using var pixmap = skImage.PeekPixels();
+            using SKPixmap pixmap = skImage.PeekPixels();
 
             if (justCopy)
                 CopyFrame(frame, pixmap);
             else
                 Images.SwsContext.Convert(frame, pixmap.GetPixels(), new(width, height, colorType.ToPixelFormat()), Images.SwsAlgorithm.FastBilinear()).ThrowIfError();
-            if (frame.CropRight == 0 && frame.CropLeft == 0 && frame.CropTop == 0 && frame.CropBottom == 0)
-                return skImage;
-            return skImage.Subset(frame.CroppedRect());
+            return frame.CropRight == 0 && frame.CropLeft == 0 && frame.CropTop == 0 && frame.CropBottom == 0
+                ? skImage
+                : skImage.Subset(frame.CroppedRect());
         }
         catch { skImage.Dispose(); throw; }
     }
 
-    public static SKRectI CroppedRect(this AVFrame frame) => new SKRectI((int)frame.CropLeft, (int)frame.CropTop, frame.CroppedWidth + (int)frame.CropLeft, frame.CroppedHeight + (int)frame.CropBottom);
+    public static SKRectI CroppedRect(this AVFrame frame) => new((int)frame.CropLeft, (int)frame.CropTop, frame.CroppedWidth + (int)frame.CropLeft, frame.CroppedHeight + (int)frame.CropBottom);
 
     public static SKBitmap ToSkiaBitmap(this AVFrame frame)
     {
@@ -153,14 +154,15 @@ public static class Extensions
         if (width <= 0 || height <= 0)
             throw new ArgumentException("Invalid image size");
         SKColorType colorType = pixfmt.IsSupportedSkiaColorType() ? pixfmt.ToSkiaColorType() : SKImageInfo.PlatformColorType;
-        if (!colorType.IsSupportedFFmpegFormat()) colorType = SKColorType.Rgba8888; // make sure that platform color type is correct
+        if (!colorType.IsSupportedFFmpegFormat())
+            colorType = SKColorType.Rgba8888; // make sure that platform color type is correct
         bool justCopy = colorType.ToPixelFormat() == pixfmt;
         SKImageInfo info = new(width, height, colorType, SKAlphaType.Unpremul);
 
         SKBitmap skImage = new(info);
         try
         {
-            using var pixmap = skImage.PeekPixels();
+            using SKPixmap pixmap = skImage.PeekPixels();
             if (justCopy)
                 CopyFrame(frame, pixmap);
             else
@@ -169,7 +171,7 @@ public static class Extensions
             if (frame.CropLeft == 0 && frame.CropRight == 0 && frame.CropTop == 0 && frame.CropBottom == 0)
                 return skImage;
             croppedImage = new();
-            skImage.ExtractSubset(croppedImage, frame.CroppedRect());
+            _ = skImage.ExtractSubset(croppedImage, frame.CroppedRect());
             skImage.Dispose();
             return croppedImage;
         }
@@ -183,17 +185,20 @@ public static class Extensions
 
     public static SKImage ToSkiaImage(this AVFrame frame, SKColorType colorType = SKColorType.Unknown)
     {
-        if (colorType == SKColorType.Unknown) return ToSkiaImage(frame);
-        var srcFormat = frame.PixelFormat;
-        if (srcFormat.IsSupportedSkiaColorType() && srcFormat.ToSkiaColorType() == colorType) return ToSkiaImage(frame);
-        if (frame.Width < 0 || frame.Height < 0) throw new ArgumentException();
+        if (colorType == SKColorType.Unknown)
+            return ToSkiaImage(frame);
+        PixelFormat srcFormat = frame.PixelFormat;
+        if (srcFormat.IsSupportedSkiaColorType() && srcFormat.ToSkiaColorType() == colorType)
+            return ToSkiaImage(frame);
+        if (frame.Width < 0 || frame.Height < 0)
+            throw new ArgumentException();
         SKImageInfo info = new(frame.Width, frame.Height, colorType, SKAlphaType.Unpremul);
         SKImage skImage = SKImage.Create(info);
         try
         {
-            using var pixmap = skImage.PeekPixels();
+            using SKPixmap pixmap = skImage.PeekPixels();
             Images.SwsContext.Convert(frame, pixmap.GetPixels(), new(pixmap.Width, pixmap.Height, colorType.ToPixelFormat()), Images.SwsAlgorithm.FastBilinear()).ThrowIfError();
-            var image = skImage.Subset(frame.CroppedRect());
+            SKImage image = skImage.Subset(frame.CroppedRect());
             return image;
         }
         catch
@@ -205,20 +210,23 @@ public static class Extensions
 
     public static SKBitmap ToSkiaBitmap(this AVFrame frame, SKColorType colorType = SKColorType.Unknown)
     {
-        if (colorType == SKColorType.Unknown) return ToSkiaBitmap(frame);
-        var srcFormat = frame.PixelFormat;
-        if (srcFormat.IsSupportedSkiaColorType() && srcFormat.ToSkiaColorType() == colorType) return ToSkiaBitmap(frame);
-        if (frame.Width < 0 || frame.Height < 0) throw new ArgumentException();
+        if (colorType == SKColorType.Unknown)
+            return ToSkiaBitmap(frame);
+        PixelFormat srcFormat = frame.PixelFormat;
+        if (srcFormat.IsSupportedSkiaColorType() && srcFormat.ToSkiaColorType() == colorType)
+            return ToSkiaBitmap(frame);
+        if (frame.Width < 0 || frame.Height < 0)
+            throw new ArgumentException();
         SKImageInfo info = new(frame.Width, frame.Height, colorType, SKAlphaType.Unpremul);
         SKBitmap skImage = new(info);
         try
         {
-            using var pixmap = skImage.PeekPixels();
+            using SKPixmap pixmap = skImage.PeekPixels();
             Images.SwsContext.Convert(frame, pixmap.GetPixels(), new(pixmap.Width, pixmap.Height, colorType.ToPixelFormat()), Images.SwsAlgorithm.FastBilinear()).ThrowIfError();
             if (frame.CropLeft == 0 && frame.CropTop == 0 && frame.CropRight == 0 && frame.CropBottom == 0)
                 return skImage;
             SKBitmap bitmap = new();
-            skImage.ExtractSubset(bitmap, frame.CroppedRect());
+            _ = skImage.ExtractSubset(bitmap, frame.CroppedRect());
             skImage.Dispose();
             return bitmap;
         }
@@ -240,8 +248,8 @@ public static class Extensions
         if (frame.PixelFormat.IsSupportedSkiaColorType())
         {
             frame = frame.Clone(); // Clone the frame
-            var cropRect = frame.CroppedRect();
-            var info = new SKImageInfo(cropRect.Width, cropRect.Height, frame.PixelFormat.ToSkiaColorType());
+            SKRectI cropRect = frame.CroppedRect();
+            SKImageInfo info = new(cropRect.Width, cropRect.Height, frame.PixelFormat.ToSkiaColorType());
             long byteSkippedLeft = (long)frame.CropLeft * info.BytesPerPixel;
             long byteSkippedTop = (long)frame.CropTop * info.RowBytes;
             SKPixmap pixmap = new(info, new IntPtr(frame.Data[0].ToInt64() + byteSkippedLeft + byteSkippedTop), frame.LineSize[0]);
@@ -253,7 +261,8 @@ public static class Extensions
             }, (frame, pixmap));
             return skImage;
         }
-        else return ToSkiaImage(frame);
+        else
+            return ToSkiaImage(frame);
     }
 
     /// <summary>
@@ -266,32 +275,34 @@ public static class Extensions
         if (frame.PixelFormat.IsSupportedSkiaColorType())
         {
             frame = frame.Clone(); // Clone the frame
-            var cropRect = frame.CroppedRect();
-            var info = new SKImageInfo(cropRect.Width, cropRect.Height, frame.PixelFormat.ToSkiaColorType());
+            SKRectI cropRect = frame.CroppedRect();
+            SKImageInfo info = new(cropRect.Width, cropRect.Height, frame.PixelFormat.ToSkiaColorType());
             long byteSkippedLeft = (long)frame.CropLeft * info.BytesPerPixel;
             long byteSkippedTop = (long)frame.CropTop * info.RowBytes;
             SKBitmap bmp = new();
-            bmp.InstallPixels(info, new IntPtr(frame.Data[0].ToInt64() + byteSkippedLeft + byteSkippedTop), frame.LineSize[0], (ptr, obj) =>
+            _ = bmp.InstallPixels(info, new IntPtr(frame.Data[0].ToInt64() + byteSkippedLeft + byteSkippedTop), frame.LineSize[0], (ptr, obj) =>
             {
                 AVFrame frame = (AVFrame)obj;
                 frame.Dispose();
             }, frame);
             return bmp;
         }
-        else return frame.ToSkiaBitmap();
+        else
+            return frame.ToSkiaBitmap();
     }
 
-    public unsafe static AVFrame ToAVFrame(this SKImage image)
+    public static unsafe AVFrame ToAVFrame(this SKImage image)
     {
-        if (!image.ColorType.IsSupportedFFmpegFormat()) throw new NotSupportedException();
+        if (!image.ColorType.IsSupportedFFmpegFormat())
+            throw new NotSupportedException();
         AVFrame frame = AVFrame.Allocate();
         try
         {
             frame.Width = image.Width;
             frame.Height = image.Height;
             frame.Format = (int)image.ColorType.ToPixelFormat();
-            frame.GetBuffer().ThrowIfError();
-            using var pixmap = image.PeekPixels();
+            frame.CreateBuffer().ThrowIfError();
+            using SKPixmap pixmap = image.PeekPixels();
             Buffer.MemoryCopy(pixmap.GetPixels().ToPointer(), (void*)frame.Data[0], pixmap.BytesSize, pixmap.BytesSize);
             return frame;
         }
@@ -302,16 +313,17 @@ public static class Extensions
         }
     }
 
-    public unsafe static AVFrame ToAVFrame(this SKBitmap image)
+    public static unsafe AVFrame ToAVFrame(this SKBitmap image)
     {
-        if (!image.ColorType.IsSupportedFFmpegFormat()) throw new NotSupportedException();
+        if (!image.ColorType.IsSupportedFFmpegFormat())
+            throw new NotSupportedException();
         AVFrame frame = AVFrame.Allocate();
         try
         {
             frame.Width = image.Width;
             frame.Height = image.Height;
             frame.Format = (int)image.ColorType.ToPixelFormat();
-            frame.GetBuffer().ThrowIfError();
+            frame.CreateBuffer().ThrowIfError();
             Buffer.MemoryCopy(image.GetPixels().ToPointer(), (void*)frame.Data[0], image.Info.BytesSize, image.Info.BytesSize);
             return frame;
         }
@@ -324,15 +336,17 @@ public static class Extensions
 
     public static AVFrame ToAVFrame(this SKImage image, PixelFormat targetFormat = PixelFormat.None)
     {
-        if (!image.ColorType.IsSupportedFFmpegFormat()) throw new NotSupportedException();
-        if (targetFormat == PixelFormat.None || targetFormat == image.ColorType.ToPixelFormat()) return ToAVFrame(image);
+        if (!image.ColorType.IsSupportedFFmpegFormat())
+            throw new NotSupportedException();
+        if (targetFormat == PixelFormat.None || targetFormat == image.ColorType.ToPixelFormat())
+            return ToAVFrame(image);
         AVFrame frame = AVFrame.Allocate();
         try
         {
             frame.Width = image.Width;
             frame.Height = image.Height;
             frame.Format = (int)targetFormat;
-            using var pixmap = image.PeekPixels();
+            using SKPixmap pixmap = image.PeekPixels();
             Images.SwsContext.Convert(pixmap.GetPixels(), new Images.ImageInfo(image.Width, image.Height, image.Info.ColorType.ToPixelFormat()), frame, Images.SwsAlgorithm.FastBilinear()).ThrowIfError();
 
             return frame;
@@ -346,8 +360,10 @@ public static class Extensions
 
     public static AVFrame ToAVFrame(this SKBitmap image, PixelFormat targetFormat = PixelFormat.None)
     {
-        if (!image.ColorType.IsSupportedFFmpegFormat()) throw new NotSupportedException();
-        if (targetFormat == PixelFormat.None || targetFormat == image.ColorType.ToPixelFormat()) return ToAVFrame(image);
+        if (!image.ColorType.IsSupportedFFmpegFormat())
+            throw new NotSupportedException();
+        if (targetFormat == PixelFormat.None || targetFormat == image.ColorType.ToPixelFormat())
+            return ToAVFrame(image);
         AVFrame frame = AVFrame.Allocate();
         try
         {
@@ -365,28 +381,22 @@ public static class Extensions
         }
     }
 
-    private static Images.SwsContext GetSwsContext(AVFrame frame, SKImageInfo info)
-    {
-
-        if (frame.Width == info.Width && frame.Height == info.Height)
-            return new Images.SwsContext(frame.Width, frame.Height, frame.PixelFormat, info.Width, info.Height, info.ColorType.ToPixelFormat(), SwsAlgorithm.FastBilinear());
-        else
-            return new Images.SwsContext(frame.Width, frame.Height, frame.PixelFormat, info.Width, info.Height, info.ColorType.ToPixelFormat(), SwsAlgorithm.Bicubic());
-
-    }
+    private static Images.SwsContext GetSwsContext(AVFrame frame, SKImageInfo info) => frame.Width == info.Width && frame.Height == info.Height
+            ? new Images.SwsContext(frame.Width, frame.Height, frame.PixelFormat, info.Width, info.Height, info.ColorType.ToPixelFormat(), SwsAlgorithm.FastBilinear())
+            : new Images.SwsContext(frame.Width, frame.Height, frame.PixelFormat, info.Width, info.Height, info.ColorType.ToPixelFormat(), SwsAlgorithm.Bicubic());
     public static void CopyTo(this AVFrame frame, SKBitmap bitmap)
     {
         if (CheckCopy(frame, bitmap.Info))
             Extensions.CopyFrame(frame, bitmap);
         else
         {
-            using var swsContext = GetSwsContext(frame, bitmap.Info);
+            using SwsContext swsContext = GetSwsContext(frame, bitmap.Info);
             swsContext.Convert(frame, bitmap.GetPixels()).ThrowIfError();
         }
         bitmap.NotifyPixelsChanged();
     }
 
-    internal unsafe static void CopyFrame(AVFrame frame, SKPixmap pixmap)
+    internal static unsafe void CopyFrame(AVFrame frame, SKPixmap pixmap)
     {
         if (pixmap.RowBytes == frame.LineSize[0])
             Buffer.MemoryCopy((void*)frame.Data[0], pixmap.GetPixels().ToPointer(), pixmap.BytesSize, pixmap.BytesSize);
@@ -395,14 +405,14 @@ public static class Extensions
             var imagePtr = (byte*)pixmap.GetPixels().ToPointer();
             for (int y = 0; y < pixmap.Height; y++)
             {
-                var framePtr = frame.Data[0] + y * frame.LineSize[0];
-                var pixPtr = imagePtr + y * pixmap.RowBytes;
+                IntPtr framePtr = frame.Data[0] + (y * frame.LineSize[0]);
+                var pixPtr = imagePtr + (y * pixmap.RowBytes);
                 Buffer.MemoryCopy((void*)framePtr, pixPtr, pixmap.RowBytes, pixmap.BytesSize);
             }
         }
     }
 
-    internal unsafe static void CopyFrame(AVFrame frame, SKBitmap bitmap)
+    internal static unsafe void CopyFrame(AVFrame frame, SKBitmap bitmap)
     {
         if (bitmap.RowBytes == frame.LineSize[0])
             Buffer.MemoryCopy((void*)frame.Data[0], bitmap.GetPixels().ToPointer(), bitmap.Info.BytesSize, bitmap.Info.BytesSize);
@@ -411,18 +421,15 @@ public static class Extensions
             var imagePtr = (byte*)bitmap.GetPixels().ToPointer();
             for (int y = 0; y < bitmap.Height; y++)
             {
-                var framePtr = frame.Data[0] + y * frame.LineSize[0];
-                var pixPtr = imagePtr + y * bitmap.RowBytes;
+                IntPtr framePtr = frame.Data[0] + (y * frame.LineSize[0]);
+                var pixPtr = imagePtr + (y * bitmap.RowBytes);
                 Buffer.MemoryCopy((void*)framePtr, pixPtr, bitmap.RowBytes, bitmap.Info.BytesSize);
             }
         }
     }
 
-    private static bool CheckCopy(AVFrame frame, SKImageInfo info)
-    {
-        return frame.CroppedWidth == info.Width
+    private static bool CheckCopy(AVFrame frame, SKImageInfo info) => frame.CroppedWidth == info.Width
             && frame.CroppedHeight == info.Height
             && frame.PixelFormat == info.ColorType.ToPixelFormat();
-    }
 }
 

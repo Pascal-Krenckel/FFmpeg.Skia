@@ -1,19 +1,7 @@
 ﻿#define Copy
 using SkiaSharp;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
 
 namespace FFmpeg.Skia.Examples;
 /// <summary>
@@ -21,20 +9,20 @@ namespace FFmpeg.Skia.Examples;
 /// </summary>
 public partial class Videoplayer : Window
 {
-    readonly object _lock = new();
-    const string file = "mp4-example-video-download-full-hd-1920x1080.1min.mp4";
-    readonly SKVideo skvideo = new SKVideo(file);
+    private readonly object _lock = new();
+    private const string file = "mp4-example-video-download-full-hd-1920x1080.1min.mp4";
+    private readonly SKVideo skvideo = new(file);
 #if Copy
-    SkiaSharp.SKBitmap bitmap = new(); // <- dispose at window unload
+    private readonly SkiaSharp.SKBitmap bitmap = new(); // <- dispose at window unload
 #else 
     SkiaSharp.SKBitmap? bitmap;
 #endif
-    FFmpeg.Skia.FFCodecFrameInfo frameInfo;
+    private FFmpeg.Skia.FFCodecFrameInfo frameInfo;
     public Videoplayer()
     {
         InitializeComponent();
         skvideo.FrameReadyToRender += Skvideo_FrameReadyToRender;
-        skvideo.Ended += (_,_) => skvideo.Seek(0); // seek to the start
+        skvideo.Ended += (_, _) => skvideo.Seek(0); // seek to the start
     }
 
     private void Skvideo_FrameReadyToRender(object? sender, (SkiaSharp.SKBitmap frame, FFCodecFrameInfo frameInfo) e)
@@ -56,7 +44,7 @@ public partial class Videoplayer : Window
         e.Surface.Canvas.Clear();
         if (bitmap != null && !bitmap.DrawsNothing)
         {
-            var dest = e.Surface.Canvas.DeviceClipBounds.AspectFit(bitmap.Info.Size);
+            SKRectI dest = e.Surface.Canvas.DeviceClipBounds.AspectFit(bitmap.Info.Size);
             e.Surface.Canvas.DrawBitmap(bitmap, dest, new SKSamplingOptions(SKCubicResampler.Mitchell)); // DrawBitmap does not have the right override, yet.          
             e.Surface.Canvas.DrawText($"{frameInfo.TimeStamp:mm\\:ss} / {skvideo.Duration:mm\\:ss}",
                       30,
@@ -69,13 +57,13 @@ public partial class Videoplayer : Window
         {
             e.Surface.Canvas.DrawText("Press [Enter] or [Space] to start the video.",
                 e.Surface.Canvas.DeviceClipBounds.MidX,
-                e.Surface.Canvas.DeviceClipBounds.MidY-10,
+                e.Surface.Canvas.DeviceClipBounds.MidY - 10,
                 SKTextAlign.Center,
                 new SKFont(SKTypeface.Default),
                 new SKPaint() { Color = SKColors.Red });
             e.Surface.Canvas.DrawText("Press [Left] for -10s and [Right] for +10s.",
                 e.Surface.Canvas.DeviceClipBounds.MidX,
-                e.Surface.Canvas.DeviceClipBounds.MidY+10,
+                e.Surface.Canvas.DeviceClipBounds.MidY + 10,
                 SKTextAlign.Center,
                 new SKFont(SKTypeface.Default),
                 new SKPaint() { Color = SKColors.Red });
@@ -84,23 +72,24 @@ public partial class Videoplayer : Window
     private bool running = false;
     private void canvas_KeyDown(object sender, KeyEventArgs e)
     {
-        if(e.Key is Key.Enter or Key.Space)
+        if (e.Key is Key.Enter or Key.Space)
         {
             // property Running not in the current nuget-package, yet
             if (!running)
                 skvideo.Resume();
-            else skvideo.Pause();
+            else
+                skvideo.Pause();
             running = !running;
         }
-        if(e.Key == Key.Left)
+        if (e.Key == Key.Left)
         {
             TimeSpan seek = TimeSpan.FromSeconds(Math.Max(0, frameInfo.TimeStamp.TotalSeconds - 10));
-            skvideo.Seek(seek);
+            _ = skvideo.Seek(seek);
         }
-        else if(e.Key == Key.Right)
+        else if (e.Key == Key.Right)
         {
             TimeSpan seek = TimeSpan.FromSeconds(Math.Min(skvideo.Duration.TotalSeconds, frameInfo.TimeStamp.TotalSeconds + 10));
-            skvideo.Seek(seek);
+            _ = skvideo.Seek(seek);
         }
     }
 

@@ -1,17 +1,6 @@
 ﻿using SkiaSharp;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
 
 namespace FFmpeg.Skia.Examples;
 /// <summary>
@@ -19,22 +8,20 @@ namespace FFmpeg.Skia.Examples;
 /// </summary>
 public partial class FF2SkiaCodecWindow : Window
 {
-    const string file = "mp4-example-video-download-full-hd-1920x1080.1min.mp4";
-    FFmpeg.Skia.FFCodec2Skia codec = FFCodec2Skia.Create(file)!;
-    SKBitmap skBitmap = new();
-    CancellationTokenSource cts = new();
-    Task decodingTask = Task.CompletedTask;
-    FFCodecFrameInfo frameInfo;
-    public FF2SkiaCodecWindow()
-    {
-        InitializeComponent();
-    }
+    private const string file = "mp4-example-video-download-full-hd-1920x1080.1min.mp4";
+    private readonly FFmpeg.Skia.FFCodec2Skia codec = FFCodec2Skia.Create(file)!;
+    private readonly SKBitmap skBitmap = new();
+    private CancellationTokenSource cts = new();
+    private Task decodingTask = Task.CompletedTask;
+    private FFCodecFrameInfo frameInfo;
+    public FF2SkiaCodecWindow() => InitializeComponent();
 
     private void DecodingTask(object? obj)
     {
         // just for concurrent rw
         FFCodecFrameInfo frameInfo;
-        if (obj is not CancellationToken token) throw new ArgumentException("obj must be an CancellationToken");
+        if (obj is not CancellationToken token)
+            throw new ArgumentException("obj must be an CancellationToken");
         try
         {
             while (!token.IsCancellationRequested)
@@ -42,7 +29,7 @@ public partial class FF2SkiaCodecWindow : Window
                 lock (codec)
                 {
                     if (!codec.NextImage(skBitmap, out frameInfo))
-                        codec.Restart(); // automatically restart if finished or error
+                        _ = codec.Restart(); // automatically restart if finished or error
                 }
                 this.frameInfo = frameInfo;
                 Task.Delay(frameInfo.Duration, token).Wait(token); // wait until next frame should be displayed
@@ -62,8 +49,8 @@ public partial class FF2SkiaCodecWindow : Window
             // but to be save while decoding and drawing frameInfo is transferred to a local variable
             FFCodecFrameInfo frameInfo;
             frameInfo = this.frameInfo;
-            var dest = e.Surface.Canvas.DeviceClipBounds.AspectFit(skBitmap.Info.Size);
-            e.Surface.Canvas.DrawBitmap(skBitmap, dest, new SKPaint() { FilterQuality = SKFilterQuality.High }); // DrawBitmap does not have the right override, yet.          
+            SKRectI dest = e.Surface.Canvas.DeviceClipBounds.AspectFit(skBitmap.Info.Size);
+            e.Surface.Canvas.DrawBitmap(skBitmap, dest, new SKSamplingOptions(SKCubicResampler.Mitchell)); // DrawBitmap does not have the right override, yet.          
             e.Surface.Canvas.DrawText($"{frameInfo.TimeStamp:mm\\:ss} / {codec.Duration:mm\\:ss}",
                       30,
                       30,
@@ -91,7 +78,7 @@ public partial class FF2SkiaCodecWindow : Window
     private void Window_Unloaded(object sender, RoutedEventArgs e)
     {
         cts.Cancel();
-        decodingTask.Wait(1_000); // wait for up to 1s for the decoding task to finish
+        _ = decodingTask.Wait(1_000); // wait for up to 1s for the decoding task to finish
         codec.Dispose();
         skBitmap.Dispose();
     }
@@ -117,17 +104,18 @@ public partial class FF2SkiaCodecWindow : Window
                     decodingTask = new(DecodingTask, cts.Token, cts.Token);
                     decodingTask.Start();
                 }
-                else cts.Cancel();
+                else
+                    cts.Cancel();
             }
             if (e.Key == Key.Left)
             {
                 TimeSpan seek = TimeSpan.FromSeconds(Math.Max(0, frameInfo.TimeStamp.TotalSeconds - 10));
-                codec.Seek(seek);
+                _ = codec.Seek(seek);
             }
             else if (e.Key == Key.Right)
             {
                 TimeSpan seek = TimeSpan.FromSeconds(Math.Min(codec.Duration.TotalSeconds, frameInfo.TimeStamp.TotalSeconds + 10));
-                codec.Seek(seek);
+                _ = codec.Seek(seek);
             }
         }
     }

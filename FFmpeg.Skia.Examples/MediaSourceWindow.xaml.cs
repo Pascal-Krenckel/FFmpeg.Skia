@@ -1,22 +1,8 @@
-﻿using FFmpeg.Codecs;
-using FFmpeg.Formats;
-using FFmpeg.Images;
+﻿using FFmpeg.Formats;
 using FFmpeg.Utils;
 using SkiaSharp;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
-using Windows.Media.Core;
 
 namespace FFmpeg.Skia.Examples;
 /// <summary>
@@ -24,20 +10,17 @@ namespace FFmpeg.Skia.Examples;
 /// </summary>
 public partial class MediaSourceWindow : Window
 {
-    MediaSource source = MediaSource.Open(file);
-    int videoIndex;
-    SKBitmap? bitmap = null;
-    TimeSpan TimeStamp { get; set; }
-    TimeSpan Duration => source.Streams[videoIndex].Duration * source.Streams[videoIndex].TimeBase;
-    CancellationTokenSource cts = new();
-    Task decodingTask = Task.CompletedTask;
+    private readonly MediaSource source = MediaSource.Open(file);
+    private int videoIndex;
+    private SKBitmap? bitmap = null;
+    private TimeSpan TimeStamp { get; set; }
+    private TimeSpan Duration => source.Streams[videoIndex].Duration * source.Streams[videoIndex].TimeBase;
+    private CancellationTokenSource cts = new();
+    private Task decodingTask = Task.CompletedTask;
 
-    const string file = "mp4-example-video-download-full-hd-1920x1080.1min.mp4";
+    private const string file = "mp4-example-video-download-full-hd-1920x1080.1min.mp4";
 
-    public MediaSourceWindow()
-    {
-        InitializeComponent();
-    }
+    public MediaSourceWindow() => InitializeComponent();
 
     private void DecodingTask(object? obj)
     {
@@ -87,7 +70,7 @@ public partial class MediaSourceWindow : Window
         // source.GetCodec = (AVStream stream) => stream.CodecId == Codecs.CodecID.H264 ? Codec.FindDecoder("decoderName") : Codec.FindDecoder(stream.CodecId);
         // or source.SetCodec(Codec,videoIndex)
         videoIndex = source.FindBestStream(Utils.MediaType.Video);
-        foreach (var stream in source.Streams)
+        foreach (AVStream stream in source.Streams)
             stream.Discard = Formats.DiscardFlags.All;
         // Discard everything but the main video stream
         source.Streams[videoIndex].Discard = Formats.DiscardFlags.Default;
@@ -101,7 +84,7 @@ public partial class MediaSourceWindow : Window
         if (bitmap != null)
         {
             // the decoding task always writes into skBitmaps internal buffer, so no need to lock
-            var dest = e.Surface.Canvas.DeviceClipBounds.AspectFit(bitmap.Info.Size);
+            SKRectI dest = e.Surface.Canvas.DeviceClipBounds.AspectFit(bitmap.Info.Size);
             e.Surface.Canvas.DrawBitmap(bitmap, dest, new SKSamplingOptions(SKCubicResampler.Mitchell)); // DrawBitmap does not have the right override, yet.          
             e.Surface.Canvas.DrawText($"{TimeStamp:mm\\:ss} / {Duration:mm\\:ss}",
                       30,
@@ -151,12 +134,12 @@ public partial class MediaSourceWindow : Window
             if (e.Key == Key.Left)
             {
                 TimeSpan seek = TimeSpan.FromSeconds(Math.Max(0, TimeStamp.TotalSeconds - 10));
-                source.Seek(seek);
+                _ = source.Seek(seek);
             }
             else if (e.Key == Key.Right)
             {
-                TimeSpan seek = TimeSpan.FromSeconds(Math.Min((Duration.TotalSeconds), TimeStamp.TotalSeconds + 10));
-                source.Seek(seek);
+                TimeSpan seek = TimeSpan.FromSeconds(Math.Min(Duration.TotalSeconds, TimeStamp.TotalSeconds + 10));
+                _ = source.Seek(seek);
             }
         }
     }
