@@ -44,6 +44,7 @@ public partial class Videoplayer : Window
             _ = bitmap.TryAllocPixels(e.frame.Info);
 
         e.frame.GetPixelSpan().CopyTo(bitmap.GetPixelSpan());
+        frameInfo = e.frameInfo;
         bitmap.NotifyPixelsChanged();
 #else
         frameInfo = e.frameInfo;
