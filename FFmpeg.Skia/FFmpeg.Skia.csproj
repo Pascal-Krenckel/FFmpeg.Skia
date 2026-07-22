@@ -21,13 +21,11 @@
 		<RepositoryType>git</RepositoryType>
 		<PackageTags>ffmpeg; skia</PackageTags>
 		<PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
-		<Version>1.0.2</Version>
+		<Version>1.1.0</Version>
 		<PackageReleaseNotes>
-			Biggest changes:
-			Added thread safety for SKVideo.
-			FrameInfo is not a captured local variable to avaid concurrent rw.
-			The back buffer and front buffer are now class members and stay valid aslong as the SKVideo is not disposed.
-		</PackageReleaseNotes>
+			Update ffmpeg version (8.1)
+			Update SkiaSharp version
+	    </PackageReleaseNotes>
 	</PropertyGroup>
 
 	<ItemGroup>
