@@ -102,7 +102,7 @@ public partial class MediaSourceWindow : Window
         {
             // the decoding task always writes into skBitmaps internal buffer, so no need to lock
             var dest = e.Surface.Canvas.DeviceClipBounds.AspectFit(bitmap.Info.Size);
-            e.Surface.Canvas.DrawBitmap(bitmap, dest, new SKPaint() { FilterQuality = SKFilterQuality.High }); // DrawBitmap does not have the right override, yet.          
+            e.Surface.Canvas.DrawBitmap(bitmap, dest, new SKSamplingOptions(SKCubicResampler.Mitchell)); // DrawBitmap does not have the right override, yet.          
             e.Surface.Canvas.DrawText($"{TimeStamp:mm\\:ss} / {Duration:mm\\:ss}",
                       30,
                       30,

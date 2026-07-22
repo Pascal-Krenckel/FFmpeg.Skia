@@ -10,9 +10,8 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="FFmpegDotNet" Version="8.0.0.2" />
-		<PackageReference Include="FFmpegDotNet.bin.winx64" Version="8.0.0" />
-		<PackageReference Include="SkiaSharp.Views.WPF" Version="3.119.1" />
+		<PackageReference Include="FFmpegDotNet.bin.winx64" Version="8.1.2" />
+		<PackageReference Include="SkiaSharp.Views.WPF" Version="4.150.1" />
 	</ItemGroup>
 
 	<ItemGroup>
