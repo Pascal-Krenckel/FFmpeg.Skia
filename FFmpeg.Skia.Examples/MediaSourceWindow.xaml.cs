@@ -47,7 +47,7 @@ public partial class MediaSourceWindow : Window
                     bitmap = frame.ToSkiaBitmap();
                 else
                     frame.CopyTo(bitmap);
-                Task.Delay(frame.Duration * frame.TimeBase, token).Wait(token); // wait until next frame should be displayed
+                Thread.Sleep((TimeSpan)(frame.Duration * frame.TimeBase)); // wait until next frame should be displayed
             }
         }
         catch (OperationCanceledException) { }
