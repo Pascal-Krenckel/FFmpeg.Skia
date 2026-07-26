@@ -31,15 +31,15 @@ public sealed class FFCodec2Skia : IDisposable
         targetWidth = targetWidth > 0 ? targetWidth : mediaSource.CodecContexts[streamIndex].Width;
         targetHeight = targetHeight > 0 ? targetHeight : mediaSource.CodecContexts[streamIndex].Height;
 
-        if (!colorType.IsSupportedFFmpegFormat() && colorType != SKColorType.Unknown)
+        if (!colorType.HasFFmpegEquivalent() && colorType != SKColorType.Unknown)
         {
             mediaSource.Dispose();
             throw new ArgumentException(nameof(colorType));
         }
-        if (colorType == SKColorType.Unknown && mediaSource.CodecContexts[streamIndex].PixelFormat.IsSupportedSkiaColorType())
+        if (colorType == SKColorType.Unknown && mediaSource.CodecContexts[streamIndex].PixelFormat.HasSkiaEquivalent())
             colorType = mediaSource.CodecContexts[streamIndex].PixelFormat.ToSkiaColorType();
         else if (colorType == SKColorType.Unknown)
-            colorType = SKImageInfo.PlatformColorType.IsSupportedFFmpegFormat() ? SKImageInfo.PlatformColorType : SKColorType.Rgba8888;
+            colorType = SKImageInfo.PlatformColorType.HasFFmpegEquivalent() ? SKImageInfo.PlatformColorType : SKColorType.Rgba8888;
         frame = AVFrame.Allocate();
         Frames = mediaSource.Streams[streamIndex].NumberOfFrames;
         Duration = mediaSource.Streams[streamIndex].Duration * mediaSource.Streams[streamIndex].TimeBase;
@@ -98,7 +98,7 @@ public sealed class FFCodec2Skia : IDisposable
                 if (!skImage.TryAllocPixels(new(frame.Width, frame.Height, colorType, SKAlphaType.Unpremul)))
                     return false;
             }
-            else if (!skImage.Info.ColorType.IsSupportedFFmpegFormat())
+            else if (!skImage.Info.ColorType.HasFFmpegEquivalent())
                 return false;
             swsContext = GetSwsContext(frame, skImage.Info);
             swsContext.Convert(frame, skImage.GetPixels()).ThrowIfError();

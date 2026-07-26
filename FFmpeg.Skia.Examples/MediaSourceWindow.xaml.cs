@@ -44,7 +44,7 @@ public partial class MediaSourceWindow : Window
                 }
                 TimeStamp = frame.GetPresentationTimestamp() * frame.TimeBase;
                 if (bitmap == null)
-                    bitmap = frame.ToSkiaBitmap();
+                    bitmap = frame.ToSKBitmap();
                 else
                     frame.CopyTo(bitmap);
                 Thread.Sleep((TimeSpan)(frame.Duration * frame.TimeBase)); // wait until next frame should be displayed
