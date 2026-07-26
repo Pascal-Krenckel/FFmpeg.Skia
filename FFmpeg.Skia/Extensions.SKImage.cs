@@ -246,4 +246,62 @@ public static partial class Extensions
         }
     }
 
+    /// <summary>
+    /// Copies the contents of an <see cref="SKImage"/> into an existing
+    /// <see cref="AVFrame"/>.
+    /// </summary>
+    /// <param name="image">
+    /// The source image.
+    /// </param>
+    /// <param name="frame">
+    /// The destination video frame.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// If the destination frame has not been initialized, its dimensions and
+    /// pixel format are set to match the image before the copy operation.
+    /// </para>
+    /// <para>
+    /// If the destination frame has already been initialized, its dimensions and
+    /// pixel format are preserved. The image is scaled and/or converted as
+    /// necessary before being written to the frame.
+    /// </para>
+    /// <para>
+    /// If the destination frame does not already own a buffer, one is allocated
+    /// automatically.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="NotSupportedException">
+    /// The image's <see cref="SKColorType"/> has no equivalent FFmpeg pixel
+    /// format, or the image's pixel data cannot be accessed (for example, because
+    /// it is GPU-backed).
+    /// </exception>
+    public static void CopyTo(this SKImage image, AVFrame frame)
+    {
+        var targetFormat = frame.PixelFormat;
+        var sourceFormat = image.ColorType.ToPixelFormat();
+
+        bool resetProperties = frame.Width == 0 || frame.Height == 0 || targetFormat == PixelFormat.None;
+        if (!image.ColorType.HasFFmpegEquivalent())
+            throw new NotSupportedException();
+
+        if (resetProperties)
+        {
+            frame.Unreference();
+            frame.Width = image.Width;
+            frame.Height = image.Height;
+            frame.PixelFormat = sourceFormat;
+        }
+        if (!frame.HasBuffer)
+            frame.CreateBuffer().ThrowIfError();
+
+        using SKPixmap pixmap = new();
+        if (!image.PeekPixels(pixmap))
+            throw new NotSupportedException("Could not peek pixel, hw images are not supported");
+
+        var swAlgorithm = (image.Width != frame.Width || image.Height != frame.Height) ? SwsAlgorithm.Bicubic() : Images.SwsAlgorithm.FastBilinear();
+        Images.SwsContext.Convert(pixmap.GetPixels(), new Images.ImageInfo(image.Width, image.Height, sourceFormat), frame, swAlgorithm).ThrowIfError();
+
+    }
+
 }

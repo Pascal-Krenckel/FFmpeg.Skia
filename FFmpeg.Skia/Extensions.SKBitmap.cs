@@ -1,27 +1,28 @@
 ﻿using FFmpeg.Images;
 using FFmpeg.Utils;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace FFmpeg.Skia;
 
 
 /// <summary>
-/// Provides extension methods for interoperating between FFmpeg image types and
+/// Provides extension methods for interoperating between FFmpeg bitmap types and
 /// SkiaSharp.
 /// </summary>
 /// <remarks>
 /// <para>
 /// This class contains helper methods for converting between FFmpeg
 /// <see cref="PixelFormat"/> values and SkiaSharp <see cref="SKColorType"/>
-/// values, as well as methods for converting image data between
+/// values, as well as methods for converting bitmap data between
 /// <see cref="AVFrame"/>, <see cref="SKImage"/>, and <see cref="SKBitmap"/>.
 /// </para>
 /// <para>
-/// When the source and destination pixel formats are compatible, image data is
+/// When the source and destination pixel formats are compatible, bitmap data is
 /// copied directly without conversion. Otherwise, pixel format conversion and
-/// image scaling are performed using <see cref="Images.SwsContext"/>.
+/// bitmap scaling are performed using <see cref="Images.SwsContext"/>.
 /// </para>
 /// <para>
-/// Methods prefixed with <c>To</c> create independent copies of the image data,
+/// Methods prefixed with <c>To</c> create independent copies of the bitmap data,
 /// while methods prefixed with <c>As</c> create Skia objects that share the
 /// underlying pixel buffer with a cloned <see cref="AVFrame"/>, avoiding an
 /// additional memory copy whenever possible.
@@ -59,7 +60,7 @@ public static partial class Extensions
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// The frame does not contain valid image dimensions.
+    /// The frame does not contain valid bitmap dimensions.
     /// </exception>
     public static SKBitmap ToSKBitmap(this AVFrame frame)
     {
@@ -83,7 +84,7 @@ public static partial class Extensions
             else
                 Images.SwsContext.Convert(frame, pixmap.GetPixels(), new(width, height, colorType.ToPixelFormat()), Images.SwsAlgorithm.FastBilinear()).ThrowIfError();
             SKBitmap croppedImage;
-            if(!frame.HasCrop())
+            if (!frame.HasCrop())
                 return skImage;
             croppedImage = new();
             _ = skImage.ExtractSubset(croppedImage, frame.CroppedRect());
@@ -117,7 +118,7 @@ public static partial class Extensions
     /// pixel format conversion is performed.
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// The frame does not contain valid image dimensions.
+    /// The frame does not contain valid bitmap dimensions.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// The specified color type has no equivalent FFmpeg pixel format.
@@ -137,7 +138,7 @@ public static partial class Extensions
         {
             using SKPixmap pixmap = skImage.PeekPixels();
             Images.SwsContext.Convert(frame, pixmap.GetPixels(), new(pixmap.Width, pixmap.Height, colorType.ToPixelFormat()), Images.SwsAlgorithm.FastBilinear()).ThrowIfError();
-            if(!frame.HasCrop())
+            if (!frame.HasCrop())
                 return skImage;
             SKBitmap bitmap = new();
             _ = skImage.ExtractSubset(bitmap, frame.CroppedRect());
@@ -175,7 +176,7 @@ public static partial class Extensions
     /// <para>
     /// If the frame's pixel format is not supported by Skia, this method falls back
     /// to <see cref="ToSKBitmap(AVFrame)"/>, which performs a pixel format
-    /// conversion and copies the image data.
+    /// conversion and copies the bitmap data.
     /// </para>
     /// </remarks>
     public static SKBitmap AsSKBitmap(this AVFrame frame)
@@ -314,5 +315,58 @@ public static partial class Extensions
             swsContext.Convert(frame, bitmap.GetPixels()).ThrowIfError();
         }
         bitmap.NotifyPixelsChanged();
+    }
+
+    /// <summary>
+    /// Copies the contents of an <see cref="SKBitmap"/> into an existing
+    /// <see cref="AVFrame"/>.
+    /// </summary>
+    /// <param name="bitmap">
+    /// The source bitmap.
+    /// </param>
+    /// <param name="frame">
+    /// The destination video frame.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// If the destination frame has not been initialized, its dimensions and
+    /// pixel format are set to match the bitmap before the copy operation.
+    /// </para>
+    /// <para>
+    /// If the destination frame has already been initialized, its dimensions and
+    /// pixel format are preserved. The bitmap is scaled and/or converted as
+    /// necessary before being written to the frame.
+    /// </para>
+    /// <para>
+    /// If the destination frame does not already own a buffer, one is allocated
+    /// automatically.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="NotSupportedException">
+    /// The bitmap's <see cref="SKColorType"/> has no equivalent FFmpeg pixel
+    /// format.
+    /// </exception>
+    public static void CopyTo(this SKBitmap bitmap, AVFrame frame)
+    {
+        var targetFormat = frame.PixelFormat;
+        var sourceFormat = bitmap.ColorType.ToPixelFormat();
+
+        bool resetProperties = frame.Width == 0 || frame.Height == 0 || targetFormat == PixelFormat.None;
+        if (!bitmap.ColorType.HasFFmpegEquivalent())
+            throw new NotSupportedException();
+
+        if (resetProperties)
+        {
+            frame.Unreference();
+            frame.Width = bitmap.Width;
+            frame.Height = bitmap.Height;
+            frame.PixelFormat = sourceFormat;
+        }
+        if (!frame.HasBuffer)
+            frame.CreateBuffer().ThrowIfError();
+
+        var swAlgorithm = (bitmap.Width != frame.Width || bitmap.Height != frame.Height) ? SwsAlgorithm.Bicubic() : Images.SwsAlgorithm.FastBilinear();
+        Images.SwsContext.Convert(bitmap.GetPixels(), new Images.ImageInfo(bitmap.Width, bitmap.Height, sourceFormat), frame, swAlgorithm).ThrowIfError();
+
     }
 }
