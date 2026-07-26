@@ -26,6 +26,7 @@
 			Update ffmpeg version (8.1)
 			Update SkiaSharp version
 	    </PackageReleaseNotes>
+		<GenerateDocumentationFile>True</GenerateDocumentationFile>
 	</PropertyGroup>
 
 	<ItemGroup>
