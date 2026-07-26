@@ -30,17 +30,8 @@ public class SKVideo(FFCodec2Skia video) : IDisposable
     private SKBitmap? frame = null;
 
     private readonly object _lock = new();
-    private static readonly LimitedConcurrencyLevelTaskScheduler scheduler = new(Environment.ProcessorCount - 1);
-    private static readonly TaskFactory factory = new(default, TaskCreationOptions.LongRunning, TaskContinuationOptions.None, scheduler);
+    private static readonly TaskFactory factory = new(default, TaskCreationOptions.LongRunning, TaskContinuationOptions.None,TaskScheduler.Default);
 
-    /// <summary>
-    /// Gets or sets the maximum number of decoding tasks that may execute concurrently.
-    /// </summary>
-    /// <remarks>
-    /// This setting affects all <see cref="SKVideo"/> instances because they share
-    /// a common task scheduler.
-    /// </remarks>
-    public static int MaxConcurrencyLevel { get => scheduler.MaximumConcurrencyLevel; set => scheduler.SetMaxDegreeOfParallelism(value); }
 
     private readonly FFCodec2Skia video = video ?? throw new ArgumentNullException(nameof(video));
     private CancellationTokenSource cts = new();
