@@ -158,11 +158,11 @@ public sealed class FFCodec2Skia : IDisposable
     /// </exception>
     public bool NextImage(SKBitmap skImage, out FFCodecFrameInfo frameInfo)
     {
-        CheckDisposed();
         frameInfo = default;
         AVResult32 res;
         do
         {
+            CheckDisposed();
             if ((res = mediaSource.ReadAndDecodeAVFrame(frame)).IsError)
                 return false;
         } while (res != streamIndex);
@@ -171,6 +171,7 @@ public sealed class FFCodec2Skia : IDisposable
             Duration = frame.Duration * frame.TimeBase,
             TimeStamp = frame.GetPresentationTimestamp() * frame.TimeBase,
         };
+        CheckDisposed();
         if (CheckCopy(skImage.Info))
         {
             Extensions.CopyFrame(frame, skImage);
