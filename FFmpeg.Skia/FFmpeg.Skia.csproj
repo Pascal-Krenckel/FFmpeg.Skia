@@ -21,8 +21,15 @@
 		<RepositoryType>git</RepositoryType>
 		<PackageTags>ffmpeg; skia</PackageTags>
 		<PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
-		<Version>2.0.0</Version>
+		<Version>2.2.0</Version>
 		<PackageReleaseNotes>
+			=== 2.2.0 ===
+			AVFrame.CopyTo(SKBitmap) allows now empty bitmaps.
+			SKBitmap.Reference(AVFrame). Same as AVFrame.AsSKBitmap(), just with an existing SKBitmap.
+			=== 2.1.0 ===
+			Added CopyTo-Extension that copies the content of SKBitmap/SKImage into an existing AVFrame
+			BugFix: Removed blocking scheduler from SKVideo
+			=== 2.0.0 ===
 			Some smaller BugFixes
 			Added xml docu into the package.
 			Some functions got renamed.
@@ -42,8 +49,8 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="FFmpegDotNet" Version="[8.1.2.1,8.2)" />
-		<PackageReference Include="SkiaSharp" Version="4.150.1" />
+		<PackageReference Include="FFmpegDotNet" Version="8.1.2.8" />
+		<PackageReference Include="SkiaSharp" Version="4.151.1" />
 	</ItemGroup>
 
 	<ItemGroup>
