@@ -18,6 +18,8 @@
 		<PackageProjectUrl>https://github.com/Pascal-Krenckel/FFmpeg.Skia</PackageProjectUrl>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<RepositoryUrl>https://github.com/Pascal-Krenckel/FFmpeg.Skia</RepositoryUrl>
+		<PublishRepositoryUrl>true</PublishRepositoryUrl>
+		<IncludeSymbols>True</IncludeSymbols>
 		<RepositoryType>git</RepositoryType>
 		<PackageTags>ffmpeg; skia</PackageTags>
 		<PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
@@ -50,6 +52,10 @@
 
 	<ItemGroup>
 		<PackageReference Include="FFmpegDotNet" Version="8.1.2.8" />
+		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.400">
+		  <PrivateAssets>all</PrivateAssets>
+		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
 		<PackageReference Include="SkiaSharp" Version="4.151.1" />
 	</ItemGroup>
 
