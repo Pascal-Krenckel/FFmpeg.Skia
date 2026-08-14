@@ -6,23 +6,23 @@ namespace FFmpeg.Skia;
 
 
 /// <summary>
-/// Provides extension methods for interoperating between FFmpeg bitmap types and
+/// Provides extension methods for interoperating between FFmpeg bmp types and
 /// SkiaSharp.
 /// </summary>
 /// <remarks>
 /// <para>
 /// This class contains helper methods for converting between FFmpeg
 /// <see cref="PixelFormat"/> values and SkiaSharp <see cref="SKColorType"/>
-/// values, as well as methods for converting bitmap data between
+/// values, as well as methods for converting bmp data between
 /// <see cref="AVFrame"/>, <see cref="SKImage"/>, and <see cref="SKBitmap"/>.
 /// </para>
 /// <para>
-/// When the source and destination pixel formats are compatible, bitmap data is
+/// When the source and destination pixel formats are compatible, bmp data is
 /// copied directly without conversion. Otherwise, pixel format conversion and
-/// bitmap scaling are performed using <see cref="Images.SwsContext"/>.
+/// bmp scaling are performed using <see cref="Images.SwsContext"/>.
 /// </para>
 /// <para>
-/// Methods prefixed with <c>To</c> create independent copies of the bitmap data,
+/// Methods prefixed with <c>To</c> create independent copies of the bmp data,
 /// while methods prefixed with <c>As</c> create Skia objects that share the
 /// underlying pixel buffer with a cloned <see cref="AVFrame"/>, avoiding an
 /// additional memory copy whenever possible.
@@ -55,12 +55,12 @@ public static partial class Extensions
     /// <see cref="SwsContext"/>.
     /// </para>
     /// <para>
-    /// If the frame contains cropping information, the returned bitmap contains only
+    /// If the frame contains cropping information, the returned bmp contains only
     /// the visible region.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// The frame does not contain valid bitmap dimensions.
+    /// The frame does not contain valid bmp dimensions.
     /// </exception>
     public static SKBitmap ToSKBitmap(this AVFrame frame)
     {
@@ -106,7 +106,7 @@ public static partial class Extensions
     /// The source video frame.
     /// </param>
     /// <param name="colorType">
-    /// The desired color type of the resulting bitmap. If
+    /// The desired color type of the resulting bmp. If
     /// <see cref="SKColorType.Unknown"/> is specified, the most appropriate Skia
     /// color type is selected automatically.
     /// </param>
@@ -118,7 +118,7 @@ public static partial class Extensions
     /// pixel format conversion is performed.
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// The frame does not contain valid bitmap dimensions.
+    /// The frame does not contain valid bmp dimensions.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// The specified color type has no equivalent FFmpeg pixel format.
@@ -166,7 +166,7 @@ public static partial class Extensions
     /// <remarks>
     /// <para>
     /// If the frame uses a pixel format that is directly supported by Skia, no pixel
-    /// data is copied. Instead, the frame is cloned and the returned bitmap
+    /// data is copied. Instead, the frame is cloned and the returned bmp
     /// references the cloned frame's buffer.
     /// </para>
     /// <para>
@@ -176,7 +176,7 @@ public static partial class Extensions
     /// <para>
     /// If the frame's pixel format is not supported by Skia, this method falls back
     /// to <see cref="ToSKBitmap(AVFrame)"/>, which performs a pixel format
-    /// conversion and copies the bitmap data.
+    /// conversion and copies the bmp data.
     /// </para>
     /// </remarks>
     public static SKBitmap AsSKBitmap(this AVFrame frame)
@@ -201,20 +201,65 @@ public static partial class Extensions
     }
 
     /// <summary>
+    /// Replaces the pixel data of this <see cref="SKBitmap"/> with the supplied
+    /// <see cref="AVFrame"/>, sharing the frame's pixel buffer whenever possible.
+    /// </summary>
+    /// <param name="bmp">
+    /// The destination bitmap.
+    /// </param>
+    /// <param name="frame">
+    /// The source video frame.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// If the frame uses a pixel format that is directly supported by Skia, no pixel
+    /// data is copied. Instead, the frame is cloned and the bitmap references the
+    /// cloned frame's buffer.
+    /// </para>
+    /// <para>
+    /// The cloned frame remains alive until the bitmap is reset or disposed.
+    /// </para>
+    /// <para>
+    /// If the frame's pixel format is not supported by Skia, this method falls back
+    /// to <see cref="CopyTo(AVFrame,SKBitmap)"/>, which performs a pixel format
+    /// conversion and copies the converted pixel data into the bitmap.
+    /// </para>
+    /// </remarks>
+    public static void Reference(this SKBitmap bmp, AVFrame frame)
+    {
+        if (frame.PixelFormat.HasSkiaEquivalent())
+        {
+            bmp.Reset();
+            frame = frame.Clone(); // Clone the frame
+            SKRectI cropRect = frame.CroppedRect();
+            SKImageInfo info = new(cropRect.Width, cropRect.Height, frame.PixelFormat.ToSkiaColorType());
+            long byteSkippedLeft = (long)frame.CropLeft * info.BytesPerPixel;
+            long byteSkippedTop = (long)frame.CropTop * info.RowBytes;
+            _ = bmp.InstallPixels(info, new IntPtr(frame.Data[0].ToInt64() + byteSkippedLeft + byteSkippedTop), frame.LineSize[0], (ptr, obj) =>
+            {
+                AVFrame frame = (AVFrame)obj;
+                frame.Dispose();
+            }, frame);
+        }
+        else
+            frame.CopyTo(bmp);
+    }
+
+    /// <summary>
     /// Creates a new <see cref="AVFrame"/> from an <see cref="SKBitmap"/>.
     /// </summary>
     /// <param name="image">
-    /// The source bitmap.
+    /// The source bmp.
     /// </param>
     /// <returns>
-    /// A newly allocated frame containing the bitmap data.
+    /// A newly allocated frame containing the bmp data.
     /// </returns>
     /// <remarks>
     /// The resulting frame uses the FFmpeg pixel format corresponding to the
-    /// bitmap's <see cref="SKColorType"/>.
+    /// bmp's <see cref="SKColorType"/>.
     /// </remarks>
     /// <exception cref="NotSupportedException">
-    /// The bitmap's color type has no equivalent FFmpeg pixel format.
+    /// The bmp's color type has no equivalent FFmpeg pixel format.
     /// </exception>
     public static unsafe AVFrame ToAVFrame(this SKBitmap image)
     {
@@ -242,21 +287,21 @@ public static partial class Extensions
     /// specified pixel format.
     /// </summary>
     /// <param name="image">
-    /// The source bitmap.
+    /// The source bmp.
     /// </param>
     /// <param name="targetFormat">
     /// The desired FFmpeg pixel format. Specify <see cref="PixelFormat.None"/> to
-    /// preserve the bitmap's native format.
+    /// preserve the bmp's native format.
     /// </param>
     /// <returns>
-    /// A newly allocated frame containing the converted bitmap.
+    /// A newly allocated frame containing the converted bmp.
     /// </returns>
     /// <remarks>
-    /// If the requested pixel format already matches the bitmap's color type, no
+    /// If the requested pixel format already matches the bmp's color type, no
     /// conversion is performed.
     /// </remarks>
     /// <exception cref="NotSupportedException">
-    /// The bitmap's color type has no equivalent FFmpeg pixel format.
+    /// The bmp's color type has no equivalent FFmpeg pixel format.
     /// </exception>
     public static AVFrame ToAVFrame(this SKBitmap image, PixelFormat targetFormat = PixelFormat.None)
     {
@@ -289,20 +334,20 @@ public static partial class Extensions
     /// The source video frame.
     /// </param>
     /// <param name="bitmap">
-    /// The destination bitmap.
+    /// The destination bmp.
     /// </param>
     /// <remarks>
     /// <para>
-    /// If the frame and bitmap have matching dimensions and compatible pixel
+    /// If the frame and bmp have matching dimensions and compatible pixel
     /// formats, the pixel data is copied directly.
     /// </para>
     /// <para>
     /// Otherwise, the frame is scaled and/or converted using
-    /// <see cref="SwsContext"/> before being written to the bitmap.
+    /// <see cref="SwsContext"/> before being written to the bmp.
     /// </para>
     /// <para>
     /// <see cref="SKBitmap.NotifyPixelsChanged"/> is called automatically after the
-    /// bitmap has been updated.
+    /// bmp has been updated.
     /// </para>
     /// </remarks>
     public static void CopyTo(this AVFrame frame, SKBitmap bitmap)
@@ -311,6 +356,13 @@ public static partial class Extensions
             Extensions.CopyFrame(frame, bitmap);
         else
         {
+            if(bitmap.IsEmpty)
+            {
+                SKRectI cropRect = frame.CroppedRect();
+                SKImageInfo info = new(cropRect.Width, cropRect.Height, frame.PixelFormat.ToBestSkiaColorType(),SKAlphaType.Unpremul);
+                if (!bitmap.TryAllocPixels(info))
+                    throw new ArgumentException($"The bitmap was empty but buffer allocation failed: {info}");
+            }
             using SwsContext swsContext = GetSwsContext(frame, bitmap.Info);
             swsContext.Convert(frame, bitmap.GetPixels()).ThrowIfError();
         }
@@ -322,7 +374,7 @@ public static partial class Extensions
     /// <see cref="AVFrame"/>.
     /// </summary>
     /// <param name="bitmap">
-    /// The source bitmap.
+    /// The source bmp.
     /// </param>
     /// <param name="frame">
     /// The destination video frame.
@@ -330,11 +382,11 @@ public static partial class Extensions
     /// <remarks>
     /// <para>
     /// If the destination frame has not been initialized, its dimensions and
-    /// pixel format are set to match the bitmap before the copy operation.
+    /// pixel format are set to match the bmp before the copy operation.
     /// </para>
     /// <para>
     /// If the destination frame has already been initialized, its dimensions and
-    /// pixel format are preserved. The bitmap is scaled and/or converted as
+    /// pixel format are preserved. The bmp is scaled and/or converted as
     /// necessary before being written to the frame.
     /// </para>
     /// <para>
@@ -343,7 +395,7 @@ public static partial class Extensions
     /// </para>
     /// </remarks>
     /// <exception cref="NotSupportedException">
-    /// The bitmap's <see cref="SKColorType"/> has no equivalent FFmpeg pixel
+    /// The bmp's <see cref="SKColorType"/> has no equivalent FFmpeg pixel
     /// format.
     /// </exception>
     public static void CopyTo(this SKBitmap bitmap, AVFrame frame)
