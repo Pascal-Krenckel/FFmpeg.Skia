@@ -24,8 +24,10 @@
 		<RepositoryType>git</RepositoryType>
 		<PackageTags>ffmpeg; skia</PackageTags>
 		<PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
-		<Version>2.2.0</Version>
+		<Version>2.3.0</Version>
 		<PackageReleaseNotes>
+			=== 2.3.0 ===
+			Added SKAnimatedImage - a class that allows for both automatic and manual decoding auf image/video data.
 			=== 2.2.0 ===
 			AVFrame.CopyTo(SKBitmap) allows now empty bitmaps.
 			SKBitmap.Reference(AVFrame). Same as AVFrame.AsSKBitmap(), just with an existing SKBitmap.
