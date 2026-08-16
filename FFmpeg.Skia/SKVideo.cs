@@ -5,7 +5,7 @@ using System.Diagnostics;
 namespace FFmpeg.Skia;
 
 /// <summary>
-/// Provides asynchronous video playback for SkiaSharp applications.
+/// Provides asynchronous video playback for SkiaSharp applications. This class has no audio support. Use <see cref="FFmpeg.MediaPlayer.PlaybackEngine"/>.
 /// </summary>
 /// <remarks>
 /// <para>
