@@ -6,7 +6,8 @@
 		<Nullable>enable</Nullable>
 		<LangVersion>latest</LangVersion>
 		<AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+		<GeneratePackageOnBuild Condition=" $(Configuration) == 'Release' ">true</GeneratePackageOnBuild>
+		<GenerateDocumentationFile Condition=" $(Configuration) == 'Release' ">True</GenerateDocumentationFile>
 		<PackageId>FFmpegDotNet.Skia</PackageId>
 		<Title>FFmpeg.Skia</Title>
 		<Authors>Pascal Krenckel</Authors>
@@ -51,7 +52,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="FFmpegDotNet" Version="8.1.2.8" />
+		<PackageReference Include="FFmpegDotNet" Version="8.1.2.11" />
 		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.400">
 		  <PrivateAssets>all</PrivateAssets>
 		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
