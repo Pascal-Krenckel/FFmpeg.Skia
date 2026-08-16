@@ -21,6 +21,7 @@
 		<RepositoryUrl>https://github.com/Pascal-Krenckel/FFmpeg.Skia</RepositoryUrl>
 		<PublishRepositoryUrl>true</PublishRepositoryUrl>
 		<IncludeSymbols>True</IncludeSymbols>
+		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
 		<RepositoryType>git</RepositoryType>
 		<PackageTags>ffmpeg; skia</PackageTags>
 		<PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
