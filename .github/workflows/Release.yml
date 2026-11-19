@@ -23,7 +23,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -102,7 +102,7 @@ jobs:
       # Written release notes (.github/release-notes/<tag>.md) are used if they exist; GitHub's generated notes
       # (pull requests and contributors) are appended.
       - name: Checkout release notes
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           sparse-checkout: .github/release-notes
           path: source
