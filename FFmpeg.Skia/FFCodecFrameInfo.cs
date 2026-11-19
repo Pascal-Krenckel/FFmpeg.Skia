@@ -18,8 +18,8 @@ public readonly struct FFCodecFrameInfo : IEquatable<FFCodecFrameInfo>
     /// Gets the presentation timestamp of the frame.
     /// </summary>
     /// <remarks>
-    /// This value represents the intended presentation time of the frame relative
-    /// to the start of the media.
+    /// This is the timestamp of the stream converted to a <see cref="TimeSpan"/>; it does not necessarily start at
+    /// zero (e.g. MPEG-TS). <see cref="TimeSpan.Zero"/> if the frame has no timestamp.
     /// </remarks>
     public TimeSpan TimeStamp { get; init; }
 

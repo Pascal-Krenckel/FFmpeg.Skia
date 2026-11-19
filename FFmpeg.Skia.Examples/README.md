@@ -25,6 +25,8 @@ This project relies on the following NuGet packages:
 
 ### 3. **FFmpegDotNet.bin.winx64**
    - **Purpose**: Contains the necessary FFmpeg binary files for Windows (64-bit) for video and audio processing.
+     Its major version must match FFmpegDotNet (8.x for FFmpeg 8, 9.x for FFmpeg 9); the project selects it with
+     `FFmpegMajor` (see `Directory.Build.props`, e.g. `dotnet build -p:FFmpegMajor=8`).
    - **NuGet Link**: [FFmpegDotNet.bin.winx64](https://www.nuget.org/packages/FFmpegDotNet.bin.winx64)
    - **Installation**:
      ```bash
@@ -63,20 +65,27 @@ Videoplayer uses FFmpeg.Skia.SKVideo to render the video frames.
         bitmap.NotifyPixelsChanged();
     }
 ```
-You could just save a reference to the front buffer instead of copying the data.
-The SKBitmap stays valid until SKVideo gets disposed. However you may not draw or dispose the frame, as it is one of the buffers the AVFrame will be copied into.
+The bitmap passed to the handler is one of the buffers `SKVideo` decodes into, so it is copied here.
+Keeping a reference and drawing it later also works, but the next frames are decoded into the same buffers, so a
+frame drawn while it is being overwritten may show parts of two frames.
 
 ```csharp
     private void Skvideo_FrameReadyToRender(object? sender, (SkiaSharp.SKBitmap frame, FFCodecFrameInfo frameInfo) e)
     {
         frameInfo = e.frameInfo;
-        bitmap = e.frame;
+        bitmap = e.frame; // drawn later, see above
     }
 ```
 
-### FF2SkiaCodecWindows.xaml
+Seeking in the `Ended` handler loops the video:
 
-Instead of using SKVideo this uses FF2SkiaCodec directly.
+```csharp
+    skvideo.Ended += (_, _) => skvideo.Seek(TimeSpan.Zero);
+```
+
+### FF2SkiaCodecWindow.xaml
+
+Instead of using SKVideo this uses FFCodec2Skia directly.
 
 ```csharp
     private void DecodingTask(object? obj)
@@ -91,7 +100,7 @@ Instead of using SKVideo this uses FF2SkiaCodec directly.
                 lock (codec)
                 {
                     if (!codec.NextImage(skBitmap, out frameInfo))
-                        codec.Restart(); // automatically restart if finished or error
+                        codec.Restart(); // restart at the end of the video (decoding errors throw)
                 }
                 this.frameInfo = frameInfo;
                 Thread.Sleep(frameInfo.Duration); // wait until next frame should be displayed
@@ -100,3 +109,14 @@ Instead of using SKVideo this uses FF2SkiaCodec directly.
         catch (OperationCanceledException) { }
     }
 ```
+
+### MediaSourceWindow.xaml
+
+Decodes with the wrapper's `MediaSource` and converts every frame with `frame.CopyTo(bitmap)`.
+The extension methods keep their conversion setup between calls, so this is fast for every frame.
+
+### SKAnimatedImageWindow.xaml
+
+Plays the video in a 5x5 grid with 25 `SKAnimatedImage`s that decode on a shared `FFmpegWorkQueue`.
+The paint handler draws `Frame` of every image whenever the surface renders, independently of `ReadyToRender`:
+`SKAnimatedImage` keeps the frame shown before untouched for one more frame, so this is safe.

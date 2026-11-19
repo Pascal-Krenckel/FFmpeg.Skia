@@ -35,6 +35,11 @@ namespace FFmpeg.Skia;
 /// The cropping values of a frame (<see cref="AVFrame.CropLeft"/>, ...) are applied: only the visible region is
 /// converted.
 /// </para>
+/// <para>
+/// The <c>DrawFrame</c> extensions of <see cref="SKCanvas"/> draw frames without copying when Skia supports their
+/// pixel format (<see cref="AsSKImage(AVFrame)"/>) and convert them otherwise. The display rotation of a video is not
+/// applied by any of these methods; use <c>DrawRotated</c> to draw with it.
+/// </para>
 /// </remarks>
 public static partial class Extensions
 {

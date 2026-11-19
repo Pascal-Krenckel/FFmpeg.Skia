@@ -1,6 +1,6 @@
 name: Release
 
-# Push a tag v<SkiaVersion> (e.g. v2.4.0, see FFmpeg.Skia.csproj) to publish both packages:
+# Push a tag v<SkiaVersion> (e.g. v3.0.0, see FFmpeg.Skia.csproj) to publish both packages:
 # FFmpegDotNet.Skia <8>.<SkiaVersion> for FFmpeg 8 and <9>.<SkiaVersion> for FFmpeg 9.
 on:
   push:
@@ -99,12 +99,26 @@ jobs:
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate
 
+      # Written release notes (.github/release-notes/<tag>.md) are used if they exist; GitHub's generated notes
+      # (pull requests and contributors) are appended.
+      - name: Checkout release notes
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/release-notes
+          path: source
+
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
+          notes=()
+          if [ -f "source/.github/release-notes/${{ github.ref_name }}.md" ]; then
+            notes=(--notes-file "source/.github/release-notes/${{ github.ref_name }}.md")
+          fi
           gh release create "${{ github.ref_name }}" \
             --repo "${{ github.repository }}" \
+            "${notes[@]}" \
             --generate-notes \
-            --title "${{ github.ref_name }}" \
+            --title "FFmpeg.Skia ${{ github.ref_name }}" \
             release/*.zip release/*.nupkg

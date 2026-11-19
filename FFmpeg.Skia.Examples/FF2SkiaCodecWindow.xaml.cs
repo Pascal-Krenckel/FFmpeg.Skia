@@ -29,7 +29,7 @@ public partial class FF2SkiaCodecWindow : Window
                 lock (codec)
                 {
                     if (!codec.NextImage(skBitmap, out frameInfo))
-                        _ = codec.Restart(); // automatically restart if finished or error
+                        _ = codec.Restart(); // restart at the end of the video (decoding errors throw)
                 }
                 this.frameInfo = frameInfo;
                 Thread.Sleep(frameInfo.Duration); // wait until next frame should be displayed

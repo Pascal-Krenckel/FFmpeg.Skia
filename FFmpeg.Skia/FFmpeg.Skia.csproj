@@ -12,8 +12,9 @@
 		<Title>FFmpeg.Skia</Title>
 		<Authors>Pascal Krenckel</Authors>
 		<Description>
-			Provides SkiaSharp integration for the FFmpeg .NET wrapper.
-			Enables converting FFmpeg AVFrames to SKImage or SKBitmap, and includes high-level classes (FFCodec2Skia, SKVideo) for decoding and rendering videos or images with Skia.
+			Provides SkiaSharp integration for the FFmpeg .NET wrapper (FFmpegDotNet).
+			Converts FFmpeg AVFrames to SKImage or SKBitmap and back, with crop, color space (YUV matrix, range, HDR) and alpha handling, and includes high-level classes (FFCodec2Skia, SKVideo, SKAnimatedImage) for decoding and rendering videos and animated images with Skia.
+			The package version starts with the FFmpeg major version: 8.x for FFmpegDotNet 8 (FFmpeg 8.1), 9.x for FFmpegDotNet 9 (FFmpeg 9.0).
 		</Description>
 		<Copyright>Copyright (c) 2025 Pascal Krenckel. All rights reserved.</Copyright>
 		<PackageProjectUrl>https://github.com/Pascal-Krenckel/FFmpeg.Skia</PackageProjectUrl>
@@ -26,35 +27,47 @@
 		<PackageTags>ffmpeg; skia</PackageTags>
 		<PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
 		<!-- The version of FFmpeg.Skia itself; release tags are v$(SkiaVersion) (see .github/workflows/Release.yml) -->
-		<SkiaVersion>2.4.0</SkiaVersion>
-		<!-- FFmpegMajor.Major.Minor.Patch, like FFmpegDotNet: 8.2.4.0 is built for FFmpeg 8, 9.2.4.0 for FFmpeg 9 -->
+		<SkiaVersion>3.0.0</SkiaVersion>
+		<!-- FFmpegMajor.Major.Minor.Patch, like FFmpegDotNet: 8.3.0.0 is built for FFmpeg 8, 9.3.0.0 for FFmpeg 9 -->
 		<Version>$(FFmpegMajor).$(SkiaVersion)</Version>
 		<DefineConstants Condition="'$(FFmpegMajor)' == '9'">$(DefineConstants);FFMPEG9</DefineConstants>
 		<PackageReleaseNotes>
-			=== 2.4.0 ===
-			Builds for FFmpeg 8 (FFmpegDotNet 8.x, package version 8.2.4.0) and FFmpeg 9 (FFmpegDotNet 9.x, package version 9.2.4.0) from the same sources.
-			Color conversion uses FFmpeg's dynamic scaler with both versions and honours the frames' color properties: YUV matrix (BT.601/BT.709/BT.2020) and range (limited/full) in both directions; before, the YUV matrix and the full range of yuv420p frames were ignored (always BT.601 limited, except yuvj formats).
-			HDR (PQ, HLG) is tone mapped and wide gamuts (BT.2020, P3) are mapped to BT.709 when converting to Skia (SDR), and the other way round when converting into frames tagged that way.
-			YUV frames written from Skia without matrix or range are tagged BT.601 / limited range (what is written), so encoders signal it.
-			Frames marked interlaced are converted as progressive images (no lines are lost).
-			The extension methods (ToSKBitmap, CopyTo, AsSKImage, DrawFrame, ...) reuse their conversion setup: converting HDR frames took seconds per call.
-			Bitmaps allocated for frames (CopyTo into an empty bitmap, SKAnimatedImage) use 8 bit color types; 10 bit video got RgbaF16.
-			SKAnimatedImage uses three buffers: Frame can be drawn from a render loop, it is not written until the frame after the next one is decoded.
-			Added Rotation (display matrix, e.g. phone videos), SampleAspectRatio and DisplaySize to FFCodec2Skia, SKVideo and SKAnimatedImage, AVStream/AVFrame.GetDisplayRotation, AVStream.GetSampleAspectRatio and SKCanvas.DrawRotated.
-			Videos with non-square pixels (e.g. DVD, broadcast) are decoded with square pixels by default (FFCodec2Skia, SKVideo, SKAnimatedImage), e.g. 720x480 with 32:27 as 853x480.
-			BugFix: copying frames whose rows are padded (most decoded frames) threw ArgumentOutOfRangeException (ToSKBitmap, ToSKImage, CopyTo, FFCodec2Skia, SKAnimatedImage).
-			BugFix: SKImage/SKBitmap.ToAVFrame and CopyTo ignored the row bytes of the image: skewed images and a heap overflow for images with padded rows (e.g. from AsSKImage).
-			BugFix: FFCodec2Skia reused a scaler for bitmaps of another size: heap overflow.
-			BugFix: cropped frames: AsSKBitmap/AsSKImage/Reference used a wrong row offset, CopyTo and FFCodec2Skia ignored the crop.
-			BugFix: SKBitmap.Reference wrote into the buffer of the previously referenced frame.
-			BugFix: AsSKBitmap/AsSKImage and FFCodec2Skia.Info used premultiplied alpha; FFmpeg's alpha is straight. Premultiplied Skia images are now converted.
-			BugFix: SKImage.ToAVFrame threw NullReferenceException for lazily decoded images.
-			BugFix: ToSKImage leaked the uncropped image.
-			BugFix: FFCodec2Skia.Create leaked the media source when the media has no video stream (now ArgumentException).
-			FFCodec2Skia.Seek(TimeSpan) now returns the frame visible at the requested time (it returned the key frame before it); Seek(long) uses the frame rate instead of FFmpeg's frame seeking, which most formats ignore.
-			FFCodec2Skia.Duration falls back to the media duration if the stream has none. NextImage throws on decoding errors instead of returning false.
-			SKVideo: Dispose after Stop threw; Dispose freed the frames while the decoding thread or a handler used them; Restart while playing was not synchronized and lost the timing; seeking in an Ended handler now continues playback (e.g. looping). Added the Faulted event.
-			SKAnimatedImage: frames were shown for the duration of the next frame; Stop allowed a second loop or manual decoding while the first loop was still running; Dispose during an operation could be undone by the operation; the AVFrame (and in DisposeAsync a bitmap) leaked; looping a still image busy-looped; Dispose from a ReadyToRender handler is safe.
+			=== 3.0.0 ===
+			Builds for FFmpeg 8 (FFmpegDotNet 8.x, package 8.3.0.0) and FFmpeg 9 (FFmpegDotNet 9.x, package 9.3.0.0) from the same sources. Use the package matching your FFmpegDotNet version.
+
+			Breaking changes:
+			- FFCodec2Skia.NextImage throws on decoding errors; false only means the end of the video.
+			- FFCodec2Skia.Seek(TimeSpan) returns the frame visible at the requested time (was: the key frame before it); Seek(long) converts the frame number with the frame rate (FFmpeg's frame seeking is ignored by most formats).
+			- Videos with non-square pixels are decoded with square pixels by default (FFCodec2Skia, SKVideo, SKAnimatedImage), e.g. 720x480 with 32:27 as 853x480.
+			- AsSKBitmap, AsSKImage and FFCodec2Skia.Info use straight (Unpremul) alpha like FFmpeg; premultiplied Skia images are converted when copied into frames.
+			- Bitmaps allocated for frames (CopyTo into an empty bitmap, SKAnimatedImage) use 8 bit color types; 10 bit video got RgbaF16.
+			- YUV frames written from Skia without matrix or range are tagged BT.601 / limited range.
+			- SKAnimatedImage.Start throws until the task returned by Stop has completed (two loops could run at the same time).
+			- FFCodec2Skia.Create and SKAnimatedImage.Create throw for media without a video stream (ArgumentException / ArgumentOutOfRangeException) and dispose the media source.
+
+			Bug fixes:
+			- Copying frames with padded rows (most decoded frames) threw ArgumentOutOfRangeException (ToSKBitmap, ToSKImage, CopyTo, FFCodec2Skia, SKAnimatedImage).
+			- SKImage/SKBitmap.ToAVFrame and CopyTo ignored the row bytes of the image: skewed images, and a heap overflow for images with padded rows (e.g. from AsSKImage).
+			- FFCodec2Skia reused a scaler for bitmaps of another size: heap overflow.
+			- Cropped frames: AsSKBitmap/AsSKImage/Reference used a wrong row offset; CopyTo and FFCodec2Skia ignored the crop.
+			- SKBitmap.Reference wrote into the buffer of the previously referenced frame.
+			- The YUV matrix (BT.709, BT.2020) and full range of yuv420p frames were ignored with FFmpeg 8 (converted as BT.601 limited range), in both directions.
+			- HDR (PQ, HLG) was not tone mapped and wide gamuts were not mapped for Skia.
+			- Frames marked interlaced lost every other line.
+			- SKImage.ToAVFrame threw NullReferenceException for lazily decoded images; ToSKImage leaked an image.
+			- FFCodec2Skia leaked the media source when creation failed; Duration was wrong for streams without duration.
+			- SKVideo: Dispose after Stop threw; Dispose freed frames still used by the decoding thread or a handler; Restart while playing was not synchronized and lost the timing; seeking in Ended did not continue playback.
+			- SKAnimatedImage: frames were shown for the duration of the next frame; Dispose during an operation could be undone; the AVFrame (and in DisposeAsync a bitmap) leaked; looping a still image busy-looped.
+
+			New:
+			- Rotation (display matrix, e.g. phone videos), SampleAspectRatio and DisplaySize on FFCodec2Skia, SKVideo and SKAnimatedImage; AVStream/AVFrame.GetDisplayRotation, AVStream.GetSampleAspectRatio; SKCanvas.DrawRotated.
+			- SKVideo.Faulted event.
+			- Colors are converted with FFmpeg's dynamic scaler with both FFmpeg versions, honoring YUV matrix, range and HDR metadata.
+
+			Improvements:
+			- The extension methods reuse their conversion setup (converting HDR frames took seconds per call).
+			- SKAnimatedImage uses three buffers: Frame can be drawn from a render loop.
+			- SKVideo and SKAnimatedImage may be disposed from any thread, including their event handlers.
 			=== 2.3.0 ===
 			Added SKAnimatedImage - a class that allows for both automatic and manual decoding auf image/video data.
 			=== 2.2.0 ===
