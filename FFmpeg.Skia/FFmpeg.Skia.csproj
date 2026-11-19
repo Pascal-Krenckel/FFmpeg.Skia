@@ -31,7 +31,10 @@
 		<PackageReleaseNotes>
 			=== 2.4.0 ===
 			Builds for FFmpeg 8 (FFmpegDotNet 8.x, package version 8.2.4.0) and FFmpeg 9 (FFmpegDotNet 9.x, package version 9.2.4.0) from the same sources.
-			With FFmpeg 9 frames are converted with the dynamic SwsContext, which honours the frames' color properties (e.g. BT.709).
+			Color conversion uses FFmpeg's dynamic scaler with both versions and honours the frames' color properties: YUV matrix (BT.601/BT.709/BT.2020) and range (limited/full) in both directions; before, the YUV matrix and the full range of yuv420p frames were ignored (always BT.601 limited, except yuvj formats).
+			HDR (PQ, HLG) is tone mapped and wide gamuts (BT.2020, P3) are mapped to BT.709 when converting to Skia (SDR), and the other way round when converting into frames tagged that way.
+			YUV frames written from Skia without matrix or range are tagged BT.601 / limited range (what is written), so encoders signal it.
+			Frames marked interlaced are converted as progressive images (no lines are lost).
 			BugFix: copying frames whose rows are padded (most decoded frames) threw ArgumentOutOfRangeException (ToSKBitmap, ToSKImage, CopyTo, FFCodec2Skia, SKAnimatedImage).
 			BugFix: SKImage/SKBitmap.ToAVFrame and CopyTo ignored the row bytes of the image: skewed images and a heap overflow for images with padded rows (e.g. from AsSKImage).
 			BugFix: FFCodec2Skia reused a scaler for bitmaps of another size: heap overflow.

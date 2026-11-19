@@ -43,8 +43,7 @@ is the FFmpeg major version, like for [FFmpegDotNet](https://www.nuget.org/packa
 | 8.x (e.g. 8.2.4.0) | 8.x | 8.1 |
 
 Use the one that matches the FFmpegDotNet version (and the FFmpeg binaries) of your application.
-With FFmpeg 9, frames are converted with FFmpeg's dynamic scaler, which takes the color properties of the frames
-(e.g. BT.709) into account.
+Both behave the same.
 
 To build a specific version:
 
@@ -58,4 +57,10 @@ dotnet pack FFmpeg.Skia -c Release -p:FFmpegMajor=9   # default
 - FFmpeg stores straight (unpremultiplied) alpha. Skia objects created from frames use `SKAlphaType.Unpremul`
   (or `Opaque` for color types without alpha); premultiplied Skia images are converted when copied into frames.
 - The crop values of a frame are applied: only the visible region is converted.
+- Colors are converted with FFmpeg's scaler using the frame's color properties: the YUV matrix
+  (`AVFrame.ColorSpace`: BT.601, BT.709, BT.2020, ...) and range (`AVFrame.ColorRange`). Untagged YUV is treated
+  as BT.601 limited range, like everywhere in FFmpeg. Skia images are SDR with BT.709/sRGB primaries: HDR video
+  (PQ, HLG) is tone mapped and wide gamuts (BT.2020, P3) are mapped to BT.709; when writing into a frame tagged as
+  HDR or wide gamut, the Skia colors are mapped into it. YUV frames written from Skia without a matrix or range
+  are tagged BT.601 / limited range.
 - `AsSKBitmap`/`AsSKImage` share the frame's buffer without copying when the pixel format is supported by Skia.

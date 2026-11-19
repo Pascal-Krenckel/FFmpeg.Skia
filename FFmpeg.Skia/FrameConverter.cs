@@ -1,6 +1,7 @@
 using FFmpeg.AutoGen;
 using FFmpeg.Images;
 using FFmpeg.Unsafe;
+using FFmpeg.Utils;
 using AVFrame = FFmpeg.Utils.AVFrame;
 
 namespace FFmpeg.Skia;
@@ -22,35 +23,38 @@ internal readonly struct PixelBuffer(IntPtr pixels, int rowBytes, int width, int
 }
 
 /// <summary>
-/// Converts between <see cref="AVFrame"/>s and packed pixel buffers that may have any row stride.
+/// Converts between <see cref="AVFrame"/>s and packed Skia pixel buffers that may have any row stride.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Frames with the same size and pixel format as the buffer are copied row by row; everything else is
-/// converted with swscale. The scaler is kept between calls, so a long-lived instance (one per decoder)
-/// does not set up a new conversion for every frame.
+/// converted with a dynamic swscale context (<c>sws_scale_frame</c>), which FFmpeg 8 and 9 both provide. It takes
+/// the color properties of the frame into account:
 /// </para>
+/// <list type="bullet">
+/// <item>the YUV matrix (<see cref="AVFrame.ColorSpace"/>) and range (<see cref="AVFrame.ColorRange"/>); untagged
+/// YUV is BT.601 limited range, as everywhere in FFmpeg.</item>
+/// <item>Skia buffers are SDR with BT.709/sRGB primaries. HDR (PQ, HLG) is tone mapped and wide gamuts
+/// (BT.2020, P3, ...) are mapped to BT.709 when converting to Skia, and the other way round when converting
+/// into frames tagged that way. Other transfer functions and primaries are passed through unchanged.</item>
+/// <item>YUV frames written from Skia that have no matrix or range set are tagged with what was used
+/// (BT.601, limited range), so encoders and players interpret them correctly.</item>
+/// </list>
 /// <para>
-/// FFmpeg 9 (FFmpegDotNet 9.x) uses a dynamic <see cref="SwsContext"/>, which honours the frame's color
-/// properties (YUV matrix, range, ...). FFmpeg 8 (FFmpegDotNet 8.x) uses a fixed context and passes the
-/// row strides explicitly, because fixed contexts always allocate their own destination buffers in
-/// <c>sws_scale_frame</c>.
+/// The scaler is kept between calls, so a long-lived instance (one per decoder) does not set up a new
+/// conversion for every frame. Instances are not thread-safe.
 /// </para>
-/// <para>Instances are not thread-safe.</para>
 /// </remarks>
 internal sealed unsafe class FrameConverter : IDisposable
 {
 #if FFMPEG9
     private readonly SwsContext sws = new();
-    private readonly AVFrame view = AVFrame.Allocate();
 #else
-    private SwsContext? sws;
-    private (int srcW, int srcH, PixelFormat srcFmt, int dstW, int dstH, PixelFormat dstFmt) key;
+    private readonly SwsContext sws = SwsContext.Allocate();
 #endif
+    /// <summary>Reusable frame that points at a Skia buffer (no ownership, no AVBufferRef).</summary>
+    private readonly AVFrame view = AVFrame.Allocate();
     private bool disposed;
-
-    private static SwsAlgorithm AlgorithmFor(int srcW, int srcH, int dstW, int dstH)
-        => srcW == dstW && srcH == dstH ? SwsAlgorithm.FastBilinear() : SwsAlgorithm.Bicubic();
 
     /// <summary>
     /// Writes <paramref name="src"/> (already cropped) into <paramref name="dst"/>, scaling and converting as needed.
@@ -63,23 +67,19 @@ internal sealed unsafe class FrameConverter : IDisposable
             FrameInterop.CopyRows(src.Data[0], src.LineSize[0], dst.Pixels, dst.RowBytes, (long)dst.Width * dst.BytesPerPixel, dst.Height);
             return;
         }
-#if FFMPEG9
-        SetView(dst);
+        _AVFrame* s = Pointer(src);
+        _AVFrame* v = SetView(dst);
         try
         {
-            sws.Algorithm = AlgorithmFor(src.Width, src.Height, dst.Width, dst.Height);
-            sws.Convert(src, view).ThrowIfError();
+            // the Skia side is SDR BT.709/sRGB; anything else that needs it is color mapped by swscale
+            v->color_primaries = IsWideGamut(s->color_primaries) ? _AVColorPrimaries.AVCOL_PRI_BT709 : s->color_primaries;
+            v->color_trc = IsHdr(s->color_trc) ? _AVColorTransferCharacteristic.AVCOL_TRC_BT709 : s->color_trc;
+            Scale(s, v);
         }
         finally
         {
-            ffmpeg.av_frame_unref(Pointer(view));
+            ffmpeg.av_frame_unref(v);
         }
-#else
-        SwsContext context = GetContext(src.Width, src.Height, src.PixelFormat, dst.Width, dst.Height, dst.Format);
-        IntPtr* planes = stackalloc IntPtr[4] { dst.Pixels, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero };
-        int* strides = stackalloc int[4] { dst.RowBytes, 0, 0, 0 };
-        context.Convert(src, new ReadOnlySpan<IntPtr>(planes, 4), new ReadOnlySpan<int>(strides, 4)).ThrowIfError();
-#endif
     }
 
     /// <summary>
@@ -94,28 +94,88 @@ internal sealed unsafe class FrameConverter : IDisposable
             FrameInterop.CopyRows(src.Pixels, src.RowBytes, dst.Data[0], dst.LineSize[0], (long)src.Width * src.BytesPerPixel, src.Height);
             return;
         }
-#if FFMPEG9
-        SetView(src);
+        _AVFrame* d = Pointer(dst);
+        TagYuv(d);
+        _AVFrame* v = SetView(src);
         try
         {
-            sws.Algorithm = AlgorithmFor(src.Width, src.Height, dst.Width, dst.Height);
-            sws.Convert(view, dst).ThrowIfError();
+            bool map = IsWideGamut(d->color_primaries) || IsHdr(d->color_trc);
+            v->color_primaries = map ? _AVColorPrimaries.AVCOL_PRI_BT709 : d->color_primaries;
+            v->color_trc = map ? _AVColorTransferCharacteristic.AVCOL_TRC_BT709 : d->color_trc;
+            Scale(v, d);
         }
         finally
         {
-            ffmpeg.av_frame_unref(Pointer(view));
+            ffmpeg.av_frame_unref(v);
         }
-#else
-        SwsContext context = GetContext(src.Width, src.Height, src.Format, dst.Width, dst.Height, dst.PixelFormat);
-        IntPtr* planes = stackalloc IntPtr[4] { src.Pixels, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero };
-        int* strides = stackalloc int[4] { src.RowBytes, 0, 0, 0 };
-        context.Convert(new ReadOnlySpan<IntPtr>(planes, 4), new ReadOnlySpan<int>(strides, 4), dst).ThrowIfError();
-#endif
     }
 
+    private void Scale(_AVFrame* src, _AVFrame* dst)
+    {
+        SwsAlgorithm algorithm = src->width == dst->width && src->height == dst->height
+            ? SwsAlgorithm.FastBilinear()
+            : SwsAlgorithm.Bicubic();
+
+        // A frame marked interlaced would be scaled field by field into a progressive buffer (half the lines);
+        // like FFmpeg's scale filter, scale both as progressive frames if only one of them is interlaced.
+        int srcFlags = src->flags, dstFlags = dst->flags;
+        bool interlaceMismatch = ((srcFlags ^ dstFlags) & ffmpeg.AV_FRAME_FLAG_INTERLACED) != 0;
+        if (interlaceMismatch)
+        {
+            src->flags &= ~ffmpeg.AV_FRAME_FLAG_INTERLACED;
+            dst->flags &= ~ffmpeg.AV_FRAME_FLAG_INTERLACED;
+        }
+        try
+        {
 #if FFMPEG9
-    /// <summary>Points the reusable view frame at a packed buffer (no ownership, no AVBufferRef).</summary>
-    private void SetView(in PixelBuffer buffer)
+            sws.Algorithm = algorithm;
+#else
+            _SwsContext* context = ((IAVPointer<_SwsContext>)sws).Pointer;
+            context->flags = (uint)algorithm.AlgorithmFlags;
+            context->scaler_params[0] = algorithm.Param1;
+            context->scaler_params[1] = algorithm.Param2;
+#endif
+            ((AVResult32)ffmpeg.sws_scale_frame(((IAVPointer<_SwsContext>)sws).Pointer, dst, src)).ThrowIfError();
+        }
+        finally
+        {
+            if (interlaceMismatch)
+            {
+                src->flags = srcFlags;
+                dst->flags = dstFlags;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Tags a YUV frame without matrix or range with FFmpeg's defaults for untagged YUV (BT.601, limited range),
+    /// which is what swscale writes into it.
+    /// </summary>
+    private static void TagYuv(_AVFrame* frame)
+    {
+        _AVPixFmtDescriptor* desc = ffmpeg.av_pix_fmt_desc_get((_AVPixelFormat)frame->format);
+        const ulong NotYuv = ffmpeg.AV_PIX_FMT_FLAG_RGB | ffmpeg.AV_PIX_FMT_FLAG_PAL | ffmpeg.AV_PIX_FMT_FLAG_BAYER
+            | ffmpeg.AV_PIX_FMT_FLAG_XYZ | ffmpeg.AV_PIX_FMT_FLAG_HWACCEL;
+        if (desc == null || (desc->flags & NotYuv) != 0 || desc->nb_components < 3)
+            return; // RGB, gray, ...
+        if (frame->colorspace == _AVColorSpace.AVCOL_SPC_UNSPECIFIED)
+            frame->colorspace = _AVColorSpace.AVCOL_SPC_SMPTE170M;
+        if (frame->color_range == _AVColorRange.AVCOL_RANGE_UNSPECIFIED && !IsJpegFormat((_AVPixelFormat)frame->format))
+            frame->color_range = _AVColorRange.AVCOL_RANGE_MPEG;
+    }
+
+    private static bool IsJpegFormat(_AVPixelFormat format) => format is _AVPixelFormat.AV_PIX_FMT_YUVJ420P
+        or _AVPixelFormat.AV_PIX_FMT_YUVJ422P or _AVPixelFormat.AV_PIX_FMT_YUVJ444P
+        or _AVPixelFormat.AV_PIX_FMT_YUVJ440P or _AVPixelFormat.AV_PIX_FMT_YUVJ411P;
+
+    private static bool IsHdr(_AVColorTransferCharacteristic trc)
+        => trc is _AVColorTransferCharacteristic.AVCOL_TRC_SMPTE2084 or _AVColorTransferCharacteristic.AVCOL_TRC_ARIB_STD_B67;
+
+    private static bool IsWideGamut(_AVColorPrimaries primaries) => primaries is _AVColorPrimaries.AVCOL_PRI_BT2020
+        or _AVColorPrimaries.AVCOL_PRI_SMPTE431 or _AVColorPrimaries.AVCOL_PRI_SMPTE432 or _AVColorPrimaries.AVCOL_PRI_SMPTE428;
+
+    /// <summary>Points the reusable view frame at a packed buffer.</summary>
+    private _AVFrame* SetView(in PixelBuffer buffer)
     {
         _AVFrame* f = Pointer(view);
         ffmpeg.av_frame_unref(f);
@@ -124,20 +184,8 @@ internal sealed unsafe class FrameConverter : IDisposable
         f->format = (int)buffer.Format;
         f->data[0] = (byte*)buffer.Pixels;
         f->linesize[0] = buffer.RowBytes;
+        return f;
     }
-#else
-    private SwsContext GetContext(int srcW, int srcH, PixelFormat srcFmt, int dstW, int dstH, PixelFormat dstFmt)
-    {
-        var wanted = (srcW, srcH, srcFmt, dstW, dstH, dstFmt);
-        if (sws != null && key == wanted)
-            return sws;
-        sws?.Dispose();
-        sws = null;
-        sws = new SwsContext(srcW, srcH, srcFmt, dstW, dstH, dstFmt, AlgorithmFor(srcW, srcH, dstW, dstH));
-        key = wanted;
-        return sws;
-    }
-#endif
 
     internal static _AVFrame* Pointer(AVFrame frame) => ((IAVPointer<_AVFrame>)frame).Pointer;
 
@@ -152,12 +200,7 @@ internal sealed unsafe class FrameConverter : IDisposable
         if (disposed)
             return;
         disposed = true;
-#if FFMPEG9
         sws.Dispose();
         view.Dispose();
-#else
-        sws?.Dispose();
-        sws = null;
-#endif
     }
 }
