@@ -103,7 +103,7 @@
 		  <PrivateAssets>all</PrivateAssets>
 		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
-		<PackageReference Include="SkiaSharp" Version="4.148.0" />
+		<PackageReference Include="SkiaSharp" Version="4.157.0" />
 	</ItemGroup>
 
 	<ItemGroup>
