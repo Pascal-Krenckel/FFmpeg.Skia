@@ -58,6 +58,15 @@ public class SKVideo(FFCodec2Skia video) : IDisposable
     /// </summary>
     public SKImageInfo Info => video.Info;
 
+    /// <inheritdoc cref="FFCodec2Skia.Rotation"/>
+    public int Rotation => video.Rotation;
+
+    /// <inheritdoc cref="FFCodec2Skia.SampleAspectRatio"/>
+    public Rational SampleAspectRatio => video.SampleAspectRatio;
+
+    /// <inheritdoc cref="FFCodec2Skia.DisplaySize"/>
+    public SKSizeI DisplaySize => video.DisplaySize;
+
     /// <summary>
     /// Gets the total number of frames in the video stream.
     /// </summary>

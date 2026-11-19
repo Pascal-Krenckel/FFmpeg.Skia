@@ -35,7 +35,9 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
     readonly AVFrame frame;
     readonly FrameConverter converter;
     readonly int videoStreamIndex;
-    SKBitmap frontBuffer, backBuffer;
+    // Three buffers: the shown frame, the frame shown before it (a render loop may still be drawing it) and the
+    // buffer being decoded into. A frame's buffer is only written again two frames after it was replaced.
+    SKBitmap frontBuffer, previousBuffer, backBuffer;
     readonly FFmpegWorkQueue? workQueue;
     CancellationTokenSource? cts;
     CancellableWorkItem? asyncOperation;
@@ -53,10 +55,27 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
     /// The bitmap containing the most recently decoded frame.
     /// </value>
     /// <remarks>
+    /// <para>
     /// The bitmap is reused internally between frames. Consumers should not dispose
     /// the returned bitmap or retain it for use after another frame has been decoded.
+    /// </para>
+    /// <para>
+    /// It may be drawn from a render loop independently of <see cref="ReadyToRender"/>: the bitmap is not written
+    /// until the frame after the next one is decoded, so drawing it is safe for at least one frame duration after
+    /// reading this property. Its size has square pixels (see <see cref="SampleAspectRatio"/>); draw it with
+    /// <see cref="Rotation"/>.
+    /// </para>
     /// </remarks>
     public SKBitmap Frame => frontBuffer;
+
+    /// <inheritdoc cref="FFCodec2Skia.Rotation"/>
+    public int Rotation { get; }
+
+    /// <summary>
+    /// Gets the sample (pixel) aspect ratio of the video; 1:1 for square pixels. <see cref="Frame"/> is
+    /// scaled to square pixels (e.g. 720x480 with 32:27 is decoded as 853x480).
+    /// </summary>
+    public Rational SampleAspectRatio { get; }
 
     /// <summary>
     /// Gets the timing information of the most recently decoded frame.
@@ -89,7 +108,10 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
         this.videoStreamIndex = videoStreamIndex;
         this.workQueue = workQueue;
         // allocated last: nothing native leaks if the checks above throw
+        SampleAspectRatio = source.Streams[videoStreamIndex].GetSampleAspectRatio();
+        Rotation = source.Streams[videoStreamIndex].GetDisplayRotation();
         frontBuffer = new SKBitmap();
+        previousBuffer = new SKBitmap();
         backBuffer = new SKBitmap();
         frame = AVFrame.Allocate();
         converter = new FrameConverter();
@@ -187,9 +209,16 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
         while (!result.IsError && result != videoStreamIndex);
         if (result.IsError)
             return result;
-        FrameInterop.CopyToBitmap(frame, target, converter);
+        SKImageInfo? allocInfo = target.DrawsNothing
+            ? FrameInterop.NewInfo(VideoGeometry.DisplayWidth(frame.CroppedWidth, SampleAspectRatio), frame.CroppedHeight,
+                FrameInterop.DisplayColorType(frame.PixelFormat))
+            : null;
+        FrameInterop.CopyToBitmap(frame, target, converter, allocInfo);
         return 0;
     }
+
+    /// <summary>Shows the decoded frame; the previously shown one is kept untouched for one more frame.</summary>
+    private void Present() => (frontBuffer, previousBuffer, backBuffer) = (backBuffer, frontBuffer, previousBuffer);
 
     private FFCodecFrameInfo CurrentTiming()
     {
@@ -237,7 +266,7 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
             if (result == AVResult32.EndOfFile)
                 return false;
             result.ThrowIfError();
-            (frontBuffer, backBuffer) = (backBuffer, frontBuffer);
+            Present();
             FrameInfo = CurrentTiming();
             return true;
         }
@@ -269,7 +298,7 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
             if (result == AVResult32.EndOfFile)
                 return false;
             result.ThrowIfError();
-            (frontBuffer, backBuffer) = (backBuffer, frontBuffer);
+            Present();
             FrameInfo = info;
             return true;
         }
@@ -438,7 +467,7 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
 
                 // present the new frame when the current one has been shown long enough
                 await WaitAsync(shown, info, shownFor, token).ConfigureAwait(false);
-                (backBuffer, frontBuffer) = (frontBuffer, backBuffer);
+                Present();
                 FrameInfo = info;
                 shown = info;
                 shownFor.Restart();
@@ -627,11 +656,12 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
         frame.Dispose();
         converter.Dispose();
         cts?.Dispose();
-        SKBitmap front = frontBuffer, back = backBuffer;
+        SKBitmap front = frontBuffer, previous = previousBuffer, back = backBuffer;
         // A ReadyToRender handler may still use Frame.
         _ = handlerTask.ContinueWith(_ =>
         {
             front.Dispose();
+            previous.Dispose();
             back.Dispose();
         }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
     }

@@ -97,3 +97,30 @@ for name in ["anim.apng", "count.mp4", "anim.gif", "still.png"]:
         v = ic.streams.video[0]
         frames = [(fr.pts, fr.duration, fr.format.name, fr.width) for fr in ic.decode(v)]
         print(name, len(frames), frames[:6])
+
+# 6) Anamorphic H.264: 720x480 pixels with sample aspect ratio 32:27 (displayed as 853x480)
+c = av.open(f"{out}/anamorphic.mp4", "w")
+s = c.add_stream("libx264", rate=25)
+s.width, s.height, s.pix_fmt = 720, 480, "yuv420p"
+s.codec_context.sample_aspect_ratio = Fraction(32, 27)
+for i in range(3):
+    f = av.VideoFrame.from_ndarray(np.full((480, 720), 128, np.uint8), format="gray").reformat(format="yuv420p")
+    f.pts = i
+    for p in s.encode(f):
+        c.mux(p)
+for p in s.encode():
+    c.mux(p)
+c.close()
+
+# 7) Phone-style video: count.mp4 with a track matrix that rotates it 90 degrees clockwise for display
+import struct
+data = bytearray(open(f"{out}/count.mp4", "rb").read())
+pos = data.index(b"tkhd")                      # box type; version 0 header follows
+matrix = pos + 4 + 4 + 4 * 5 + 8 + 2 * 4       # version/flags, 5 x 32 bit, reserved 64 bit, layer..reserved
+struct.pack_into(">9i", data, matrix, 0, 0x10000, 0, -0x10000, 0, 0, 0, 0, 0x40000000)
+open(f"{out}/rotated.mp4", "wb").write(bytes(data))
+
+for name in ["anamorphic.mp4", "rotated.mp4"]:
+    with av.open(f"{out}/{name}") as ic:
+        v = ic.streams.video[0]
+        print(name, v.sample_aspect_ratio, v.codec_context.sample_aspect_ratio, getattr(v, "side_data", None))

@@ -35,6 +35,11 @@
 			HDR (PQ, HLG) is tone mapped and wide gamuts (BT.2020, P3) are mapped to BT.709 when converting to Skia (SDR), and the other way round when converting into frames tagged that way.
 			YUV frames written from Skia without matrix or range are tagged BT.601 / limited range (what is written), so encoders signal it.
 			Frames marked interlaced are converted as progressive images (no lines are lost).
+			The extension methods (ToSKBitmap, CopyTo, AsSKImage, DrawFrame, ...) reuse their conversion setup: converting HDR frames took seconds per call.
+			Bitmaps allocated for frames (CopyTo into an empty bitmap, SKAnimatedImage) use 8 bit color types; 10 bit video got RgbaF16.
+			SKAnimatedImage uses three buffers: Frame can be drawn from a render loop, it is not written until the frame after the next one is decoded.
+			Added Rotation (display matrix, e.g. phone videos), SampleAspectRatio and DisplaySize to FFCodec2Skia, SKVideo and SKAnimatedImage, AVStream/AVFrame.GetDisplayRotation, AVStream.GetSampleAspectRatio and SKCanvas.DrawRotated.
+			Videos with non-square pixels (e.g. DVD, broadcast) are decoded with square pixels by default (FFCodec2Skia, SKVideo, SKAnimatedImage), e.g. 720x480 with 32:27 as 853x480.
 			BugFix: copying frames whose rows are padded (most decoded frames) threw ArgumentOutOfRangeException (ToSKBitmap, ToSKImage, CopyTo, FFCodec2Skia, SKAnimatedImage).
 			BugFix: SKImage/SKBitmap.ToAVFrame and CopyTo ignored the row bytes of the image: skewed images and a heap overflow for images with padded rows (e.g. from AsSKImage).
 			BugFix: FFCodec2Skia reused a scaler for bitmaps of another size: heap overflow.

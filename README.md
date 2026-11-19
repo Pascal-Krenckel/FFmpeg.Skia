@@ -64,6 +64,13 @@ dotnet pack FFmpeg.Skia -c Release -p:FFmpegMajor=9   # default
   HDR or wide gamut, the Skia colors are mapped into it. YUV frames written from Skia without a matrix or range
   are tagged BT.601 / limited range.
 - `AsSKBitmap`/`AsSKImage` share the frame's buffer without copying when the pixel format is supported by Skia.
+- Videos with non-square pixels are decoded with square pixels by `FFCodec2Skia`, `SKVideo` and `SKAnimatedImage`
+  (`SampleAspectRatio`). The display rotation (e.g. of phone videos) is not applied to the decoded images; it is
+  available as `Rotation` and can be applied when drawing:
+
+  ```csharp
+  canvas.DrawRotated(bitmap, destination, video.Rotation, new SKSamplingOptions(SKCubicResampler.Mitchell));
+  ```
 
 ### Tests
 

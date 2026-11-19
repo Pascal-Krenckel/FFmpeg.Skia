@@ -204,3 +204,42 @@ internal sealed unsafe class FrameConverter : IDisposable
         view.Dispose();
     }
 }
+
+/// <summary>
+/// A small pool of <see cref="FrameConverter"/>s for the extension methods, which are called once per frame.
+/// A converter keeps its swscale setup (for HDR this includes a tone mapping table that takes seconds to build),
+/// so consecutive conversions of the same kind do not set the conversion up again.
+/// </summary>
+internal static class ConverterPool
+{
+    private static readonly System.Collections.Concurrent.ConcurrentBag<FrameConverter> pool = [];
+    private static readonly int maxPooled = Math.Min(Environment.ProcessorCount, 8);
+    private static int pooled;
+
+    public static Lease Rent()
+    {
+        if (pool.TryTake(out FrameConverter? converter))
+        {
+            Interlocked.Decrement(ref pooled);
+            return new Lease(converter);
+        }
+        return new Lease(new FrameConverter());
+    }
+
+    private static void Return(FrameConverter converter)
+    {
+        if (Interlocked.Increment(ref pooled) <= maxPooled)
+            pool.Add(converter);
+        else
+        {
+            Interlocked.Decrement(ref pooled);
+            converter.Dispose();
+        }
+    }
+
+    public readonly struct Lease(FrameConverter converter) : IDisposable
+    {
+        public FrameConverter Converter { get; } = converter;
+        public void Dispose() => Return(Converter);
+    }
+}

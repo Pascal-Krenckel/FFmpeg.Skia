@@ -104,7 +104,8 @@ public static partial class Extensions
         SKBitmap bitmap = new(info);
         try
         {
-            using FrameConverter converter = new();
+            using ConverterPool.Lease lease = ConverterPool.Rent();
+            FrameConverter converter = lease.Converter;
             FrameInterop.WriteFrame(frame, bitmap.GetPixels(), bitmap.RowBytes, bitmap.Info, converter);
             bitmap.NotifyPixelsChanged();
             return bitmap;
@@ -263,7 +264,8 @@ public static partial class Extensions
             frame.Width = image.Width;
             frame.Height = image.Height;
             frame.PixelFormat = targetFormat == PixelFormat.None ? sourceFormat : targetFormat;
-            using FrameConverter converter = new();
+            using ConverterPool.Lease lease = ConverterPool.Rent();
+            FrameConverter converter = lease.Converter;
             FrameInterop.ReadIntoFrame(image.GetPixels(), image.RowBytes, image.Info, frame, converter);
             return frame;
         }
@@ -286,8 +288,8 @@ public static partial class Extensions
     /// </param>
     /// <remarks>
     /// <para>
-    /// If the bitmap has no pixels, it is allocated with the visible size of the frame and the closest Skia
-    /// color type.
+    /// If the bitmap has no pixels, it is allocated with the visible size of the frame and the frame's color type,
+    /// or the closest 8 bit color type if Skia does not support the frame's pixel format.
     /// </para>
     /// <para>
     /// If the frame and bitmap have matching dimensions and compatible pixel
@@ -305,7 +307,8 @@ public static partial class Extensions
     /// </exception>
     public static void CopyTo(this AVFrame frame, SKBitmap bitmap)
     {
-        using FrameConverter converter = new();
+        using ConverterPool.Lease lease = ConverterPool.Rent();
+        FrameConverter converter = lease.Converter;
         FrameInterop.CopyToBitmap(frame, bitmap, converter);
     }
 
@@ -344,7 +347,8 @@ public static partial class Extensions
         if (bitmap.DrawsNothing)
             throw new ArgumentException("The bitmap has no pixels.", nameof(bitmap));
         PrepareTarget(frame, bitmap.Width, bitmap.Height, sourceFormat);
-        using FrameConverter converter = new();
+        using ConverterPool.Lease lease = ConverterPool.Rent();
+        FrameConverter converter = lease.Converter;
         FrameInterop.ReadIntoFrame(bitmap.GetPixels(), bitmap.RowBytes, bitmap.Info, frame, converter);
     }
 

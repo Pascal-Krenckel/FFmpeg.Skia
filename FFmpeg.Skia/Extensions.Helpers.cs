@@ -207,13 +207,23 @@ internal static unsafe class FrameInterop
         ThrowIfNoImage(frame);
         if (bitmap.DrawsNothing)
         {
-            SKImageInfo info = allocInfo ?? NewInfo(frame.CroppedWidth, frame.CroppedHeight, frame.PixelFormat.ToBestSkiaColorType());
+            SKImageInfo info = allocInfo ?? NewInfo(frame.CroppedWidth, frame.CroppedHeight, DisplayColorType(frame.PixelFormat));
             if (!bitmap.TryAllocPixels(info))
                 throw new ArgumentException($"The bitmap was empty but buffer allocation failed: {info}");
         }
         WriteFrame(frame, bitmap.GetPixels(), bitmap.RowBytes, bitmap.Info, converter);
         bitmap.NotifyPixelsChanged();
     }
+
+    private static readonly PixelFormat[] EightBitFormats = [PixelFormat.BGRA, PixelFormat.Gray8, PixelFormat.RGBX, PixelFormat.RGBA];
+
+    /// <summary>
+    /// The color type of bitmaps allocated for a frame: the frame's own format if Skia supports it, otherwise the
+    /// closest 8 bit format. (<see cref="Extensions.ToBestSkiaColorType"/> would pick 16 bit float for 10 bit
+    /// video, which doubles the memory and is slower to draw, without a visible difference on SDR displays.)
+    /// </summary>
+    public static SKColorType DisplayColorType(PixelFormat format)
+        => format.HasSkiaEquivalent() ? format.ToSkiaColorType() : format.FindBestPixelFormat(EightBitFormats).ToSkiaColorType();
 
     public static SKImageInfo NewInfo(int width, int height, SKColorType colorType)
         => new(width, height, colorType, AlphaTypeFor(colorType));

@@ -32,6 +32,10 @@ internal static class TestFiles
     public static string Counter => Get("count.mp4");
     /// <summary>A single RGBA PNG 333x201.</summary>
     public static string StillPng => Get("still.png");
+    /// <summary>H.264 720x480 with sample aspect ratio 32:27 (853x480 with square pixels), 3 frames.</summary>
+    public static string Anamorphic => Get("anamorphic.mp4");
+    /// <summary><see cref="Counter"/> with a display matrix that rotates it 90 degrees clockwise.</summary>
+    public static string Rotated => Get("rotated.mp4");
     /// <summary>Audio only.</summary>
     public static string AudioOnly => Get("audio.wav");
 

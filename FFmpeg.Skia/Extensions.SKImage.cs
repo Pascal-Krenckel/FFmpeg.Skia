@@ -171,7 +171,8 @@ public static partial class Extensions
                 frame.Width = info.Width;
                 frame.Height = info.Height;
                 frame.PixelFormat = targetFormat == PixelFormat.None ? info.ColorType.ToPixelFormat() : targetFormat;
-                using FrameConverter converter = new();
+                using ConverterPool.Lease lease = ConverterPool.Rent();
+                FrameConverter converter = lease.Converter;
                 FrameInterop.ReadIntoFrame(pixels, rowBytes, info, frame, converter);
             });
             return frame;
@@ -218,7 +219,8 @@ public static partial class Extensions
         WithImagePixels(image, (pixels, rowBytes, info) =>
         {
             PrepareTarget(frame, info.Width, info.Height, info.ColorType.ToPixelFormat());
-            using FrameConverter converter = new();
+            using ConverterPool.Lease lease = ConverterPool.Rent();
+            FrameConverter converter = lease.Converter;
             FrameInterop.ReadIntoFrame(pixels, rowBytes, info, frame, converter);
         });
     }

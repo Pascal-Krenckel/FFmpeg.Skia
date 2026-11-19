@@ -46,6 +46,31 @@ public sealed class FFCodec2Skia : IDisposable
     public SKImageInfo Info { get; private set; }
 
     /// <summary>
+    /// Gets the clockwise rotation in degrees (0, 90, 180 or 270) the video must be displayed with, from the
+    /// stream's display matrix (e.g. a video recorded with a phone held upright).
+    /// </summary>
+    /// <remarks>
+    /// The decoded images are not rotated; draw them with
+    /// <see cref="Extensions.DrawRotated(SKCanvas, SKBitmap, SKRect, int, SKSamplingOptions, SKPaint?)"/>.
+    /// </remarks>
+    public int Rotation { get; }
+
+    /// <summary>
+    /// Gets the sample (pixel) aspect ratio of the video; 1:1 for square pixels.
+    /// </summary>
+    /// <remarks>
+    /// If no width was requested, <see cref="Info"/> already has the width of square pixels
+    /// (e.g. 720x480 with 32:27 is decoded as 853x480).
+    /// </remarks>
+    public Rational SampleAspectRatio { get; }
+
+    /// <summary>
+    /// Gets the size of the decoded images (<see cref="Info"/>) as displayed, i.e. with <see cref="Rotation"/>
+    /// applied (width and height are swapped for 90 and 270 degrees).
+    /// </summary>
+    public SKSizeI DisplaySize => VideoGeometry.Rotate(Info.Width, Info.Height, Rotation);
+
+    /// <summary>
     /// Gets the total number of frames reported by the video stream.
     /// </summary>
     /// <remarks>
@@ -90,7 +115,11 @@ public sealed class FFCodec2Skia : IDisposable
                 mediaSource.Streams[i].Discard = Formats.DiscardFlags.All;
 
         Codecs.CodecContext codec = mediaSource.CodecContexts[streamIndex];
-        targetWidth = targetWidth > 0 ? targetWidth : codec.Width;
+        Formats.AVStream videoStream = mediaSource.Streams[streamIndex];
+        SampleAspectRatio = videoStream.GetSampleAspectRatio();
+        Rotation = videoStream.GetDisplayRotation();
+        // non-square pixels (e.g. DVD, broadcast) are scaled to square pixels by default
+        targetWidth = targetWidth > 0 ? targetWidth : VideoGeometry.DisplayWidth(codec.Width, SampleAspectRatio);
         targetHeight = targetHeight > 0 ? targetHeight : codec.Height;
 
         if (colorType == SKColorType.Unknown && codec.PixelFormat.HasSkiaEquivalent())
@@ -98,7 +127,7 @@ public sealed class FFCodec2Skia : IDisposable
         else if (colorType == SKColorType.Unknown)
             colorType = SKImageInfo.PlatformColorType.HasFFmpegEquivalent() ? SKImageInfo.PlatformColorType : SKColorType.Rgba8888;
 
-        Formats.AVStream stream = mediaSource.Streams[streamIndex];
+        Formats.AVStream stream = videoStream;
         Frames = stream.NumberOfFrames;
         Duration = GetDuration(mediaSource, stream);
         startTime = stream.StartTime != AutoGen.ffmpeg.AV_NOPTS_VALUE && stream.TimeBase.Denominator != 0
@@ -317,7 +346,8 @@ public sealed class FFCodec2Skia : IDisposable
     /// <param name="info">
     /// Specifies the dimensions and <see cref="SKColorType"/> of the decoded images.
     /// Frames are scaled and converted as necessary to match this image information.
-    /// A width or height of 0 keeps the size of the video, <see cref="SKColorType.Unknown"/> picks a color type.
+    /// A width or height of 0 keeps the size of the video (with square pixels, see <see cref="SampleAspectRatio"/>),
+    /// <see cref="SKColorType.Unknown"/> picks a color type.
     /// </param>
     /// <param name="codecOptions">
     /// A collection of codec and format options passed to FFmpeg when opening the media source.
@@ -370,7 +400,8 @@ public sealed class FFCodec2Skia : IDisposable
     /// <param name="info">
     /// Specifies the dimensions and <see cref="SKColorType"/> of the decoded images.
     /// Frames are scaled and converted as necessary to match this image information.
-    /// A width or height of 0 keeps the size of the video, <see cref="SKColorType.Unknown"/> picks a color type.
+    /// A width or height of 0 keeps the size of the video (with square pixels, see <see cref="SampleAspectRatio"/>),
+    /// <see cref="SKColorType.Unknown"/> picks a color type.
     /// </param>
     /// <param name="codecOptions">
     /// A collection of codec and format options passed to FFmpeg when opening the media source.
@@ -419,7 +450,8 @@ public sealed class FFCodec2Skia : IDisposable
     /// <param name="info">
     /// Specifies the dimensions and <see cref="SKColorType"/> of the decoded images.
     /// Frames are scaled and converted as necessary to match this image information.
-    /// A width or height of 0 keeps the size of the video, <see cref="SKColorType.Unknown"/> picks a color type.
+    /// A width or height of 0 keeps the size of the video (with square pixels, see <see cref="SampleAspectRatio"/>),
+    /// <see cref="SKColorType.Unknown"/> picks a color type.
     /// </param>
     /// <param name="codecOptions">
     /// A collection of codec and format options passed to FFmpeg when opening the media source.
