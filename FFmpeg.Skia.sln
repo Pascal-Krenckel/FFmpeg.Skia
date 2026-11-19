@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FFmpeg", "..\FFmpeg\FFmpeg\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FFmpeg.AutoGen", "..\FFmpeg\FFmpeg.AutoGen\FFmpeg.AutoGen\FFmpeg.AutoGen.csproj", "{CC936DA1-7D50-C365-5EC0-4E5CA2E222B7}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FFmpeg.Skia.Tests", "FFmpeg.Skia.Tests\FFmpeg.Skia.Tests.csproj", "{11960272-E29D-4AF8-A26F-6B26D509F4D3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -39,6 +41,10 @@ Global
 		{CC936DA1-7D50-C365-5EC0-4E5CA2E222B7}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CC936DA1-7D50-C365-5EC0-4E5CA2E222B7}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{CC936DA1-7D50-C365-5EC0-4E5CA2E222B7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{11960272-E29D-4AF8-A26F-6B26D509F4D3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{11960272-E29D-4AF8-A26F-6B26D509F4D3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{11960272-E29D-4AF8-A26F-6B26D509F4D3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{11960272-E29D-4AF8-A26F-6B26D509F4D3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

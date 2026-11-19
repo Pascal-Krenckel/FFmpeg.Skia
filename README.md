@@ -64,3 +64,14 @@ dotnet pack FFmpeg.Skia -c Release -p:FFmpegMajor=9   # default
   HDR or wide gamut, the Skia colors are mapped into it. YUV frames written from Skia without a matrix or range
   are tagged BT.601 / limited range.
 - `AsSKBitmap`/`AsSKImage` share the frame's buffer without copying when the pixel format is supported by Skia.
+
+### Tests
+
+`FFmpeg.Skia.Tests` (MSTest) uses the Windows x64 FFmpeg binaries (`FFmpegDotNet.bin.winx64`) that match `FFmpegMajor`:
+
+```bash
+dotnet test FFmpeg.Skia.Tests -p:FFmpegMajor=8
+dotnet test FFmpeg.Skia.Tests -p:FFmpegMajor=9
+```
+
+The small media files in `FFmpeg.Skia.Tests/Test-Files` are created by `make_test_files.py` (PyAV).
