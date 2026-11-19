@@ -99,7 +99,7 @@
 	<ItemGroup>
 		<PackageReference Condition="'$(FFmpegMajor)' == '8'" Include="FFmpegDotNet" Version="[8.1.2.15,9)" />
 		<PackageReference Condition="'$(FFmpegMajor)' == '9'" Include="FFmpegDotNet" Version="[9.9.4,10)" />
-		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.400">
+		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="11.0.100">
 		  <PrivateAssets>all</PrivateAssets>
 		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
