@@ -1,0 +1,46 @@
+name: Tests
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+jobs:
+  test:
+    # The test project references the Windows x64 FFmpeg binaries (FFmpegDotNet.bin.winx64).
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # FFmpeg.Skia is built against FFmpegDotNet 8.x (FFmpeg 8.1) or 9.x (FFmpeg 9.0), see Directory.Build.props.
+        ffmpeg: [ 8, 9 ]
+
+    name: Test (FFmpeg ${{ matrix.ffmpeg }})
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          # 10.0 SDK: C# 14 (extension members); 8.0 runtime: the net8.0 test target
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Build library
+        run: dotnet build FFmpeg.Skia/FFmpeg.Skia.csproj -c Release -p:FFmpegMajor=${{ matrix.ffmpeg }}
+
+      - name: Test
+        run: >
+          dotnet test FFmpeg.Skia.Tests/FFmpeg.Skia.Tests.csproj -c Release -p:FFmpegMajor=${{ matrix.ffmpeg }}
+          --logger trx --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-ffmpeg${{ matrix.ffmpeg }}
+          path: TestResults/**/*.trx
