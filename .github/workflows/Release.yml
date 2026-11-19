@@ -1,0 +1,110 @@
+name: Release
+
+# Push a tag v<SkiaVersion> (e.g. v2.4.0, see FFmpeg.Skia.csproj) to publish both packages:
+# FFmpegDotNet.Skia <8>.<SkiaVersion> for FFmpeg 8 and <9>.<SkiaVersion> for FFmpeg 9.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        ffmpeg: [ 8, 9 ]
+
+    name: Build (FFmpeg ${{ matrix.ffmpeg }})
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Check that the tag matches the version
+        shell: bash
+        run: |
+          version=$(dotnet msbuild FFmpeg.Skia/FFmpeg.Skia.csproj -getProperty:SkiaVersion)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::The tag $GITHUB_REF_NAME does not match SkiaVersion $version in FFmpeg.Skia.csproj (expected v$version)."
+            exit 1
+          fi
+
+      - name: Restore
+        run: dotnet restore FFmpeg.Skia/FFmpeg.Skia.csproj -p:Configuration=Release -p:FFmpegMajor=${{ matrix.ffmpeg }}
+
+      # Release builds also create the .nupkg and .snupkg (GeneratePackageOnBuild).
+      - name: Build
+        run: dotnet build FFmpeg.Skia/FFmpeg.Skia.csproj -c Release --no-restore -p:FFmpegMajor=${{ matrix.ffmpeg }}
+
+      - name: Collect release files
+        shell: bash
+        run: |
+          mkdir -p release
+          cp FFmpeg.Skia/bin/Release/*.nupkg FFmpeg.Skia/bin/Release/*.snupkg release/
+          for dir in FFmpeg.Skia/bin/Release/*/; do
+            (cd "$dir" && zip -r "$GITHUB_WORKSPACE/release/FFmpeg.Skia.ffmpeg${{ matrix.ffmpeg }}.$(basename "$dir").zip" .)
+          done
+          ls -l release
+
+      - name: Upload release files
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-ffmpeg${{ matrix.ffmpeg }}
+          path: release/*
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download release files
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-ffmpeg*
+          merge-multiple: true
+          path: release
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: NuGet login
+        uses: NuGet/login@v1
+        id: nuget-login
+        with:
+          user: Krenckel
+
+      - name: Publish NuGet packages
+        run: |
+          dotnet nuget push "release/*.nupkg" \
+            --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
+
+      - name: Publish NuGet symbols
+        run: |
+          dotnet nuget push "release/*.snupkg" \
+            --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --generate-notes \
+            --title "${{ github.ref_name }}" \
+            release/*.zip release/*.nupkg

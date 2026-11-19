@@ -82,3 +82,15 @@ dotnet test FFmpeg.Skia.Tests -p:FFmpegMajor=9
 ```
 
 The small media files in `FFmpeg.Skia.Tests/Test-Files` are created by `make_test_files.py` (PyAV).
+
+### GitHub Actions
+
+| Workflow | Runs on | Does |
+|---|---|---|
+| `tests.yml` | push to master, pull requests | builds the library and the examples and runs the tests for FFmpeg 8 and 9 (Windows) |
+| `Release.yml` | tag `v<SkiaVersion>`, e.g. `v2.4.0` | builds both packages (`8.<SkiaVersion>`, `9.<SkiaVersion>`), publishes them to NuGet and creates a GitHub release |
+| `documentation.yml` | push to master, manually | builds the API documentation with DocFX and publishes it to GitHub Pages |
+
+To release, set `SkiaVersion` in `FFmpeg.Skia/FFmpeg.Skia.csproj` and push the matching tag. Publishing uses NuGet trusted
+publishing (a policy for this repository and `Release.yml` on nuget.org); GitHub Pages must use "GitHub Actions" as source.
+Dependabot (`.github/dependabot.yml`) proposes updates for the actions and NuGet packages weekly.

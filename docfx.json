@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dotnet/docfx/main/schemas/docfx.schema.json",
+
+  "metadata": [
+    {
+      "src": [
+        {
+          "src": "FFmpeg.Skia/bin/Release/netstandard2.1",
+          "files": [
+            "FFmpeg.Skia.dll"
+          ]
+        }
+      ],
+      "dest": "api"
+    }
+  ],
+
+  "build": {
+    "content": [
+      {
+        "files": [
+          "index.md",
+          "api/**.yml"
+        ]
+      }
+    ],
+    "output": "_site",
+    "template": [
+      "default"
+    ]
+  }
+}

@@ -25,8 +25,10 @@
 		<RepositoryType>git</RepositoryType>
 		<PackageTags>ffmpeg; skia</PackageTags>
 		<PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+		<!-- The version of FFmpeg.Skia itself; release tags are v$(SkiaVersion) (see .github/workflows/Release.yml) -->
+		<SkiaVersion>2.4.0</SkiaVersion>
 		<!-- FFmpegMajor.Major.Minor.Patch, like FFmpegDotNet: 8.2.4.0 is built for FFmpeg 8, 9.2.4.0 for FFmpeg 9 -->
-		<Version>$(FFmpegMajor).2.4.0</Version>
+		<Version>$(FFmpegMajor).$(SkiaVersion)</Version>
 		<DefineConstants Condition="'$(FFmpegMajor)' == '9'">$(DefineConstants);FFMPEG9</DefineConstants>
 		<PackageReleaseNotes>
 			=== 2.4.0 ===

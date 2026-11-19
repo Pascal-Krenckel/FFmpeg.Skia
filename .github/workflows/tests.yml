@@ -33,6 +33,10 @@ jobs:
       - name: Build library
         run: dotnet build FFmpeg.Skia/FFmpeg.Skia.csproj -c Release -p:FFmpegMajor=${{ matrix.ffmpeg }}
 
+      # The WPF examples use the public API; building them catches breaking changes.
+      - name: Build examples
+        run: dotnet build FFmpeg.Skia.Examples/FFmpeg.Skia.Examples.csproj -c Release -p:FFmpegMajor=${{ matrix.ffmpeg }}
+
       - name: Test
         run: >
           dotnet test FFmpeg.Skia.Tests/FFmpeg.Skia.Tests.csproj -c Release -p:FFmpegMajor=${{ matrix.ffmpeg }}

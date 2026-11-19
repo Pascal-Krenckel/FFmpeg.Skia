@@ -1,0 +1,21 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      test-packages:
+        patterns:
+          - "MSTest*"
+          - "Microsoft.NET.Test.Sdk"
+          - "coverlet.collector"
+    ignore:
+      # FFmpegDotNet 8.x and 9.x are both referenced on purpose (FFmpegMajor); the major version follows FFmpeg.
+      - dependency-name: "FFmpegDotNet*"
+        update-types: [ "version-update:semver-major" ]
