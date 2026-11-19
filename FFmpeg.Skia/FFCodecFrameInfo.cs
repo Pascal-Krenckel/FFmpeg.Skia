@@ -68,4 +68,25 @@ public readonly struct FFCodecFrameInfo : IEquatable<FFCodecFrameInfo>
     /// A string containing the presentation timestamp and the end time of the frame.
     /// </returns>
     public override string ToString() => $"{TimeStamp} -> {TimeStamp + Duration}";
+
+    /// <summary>
+    /// Reads the timing of a decoded frame. Returns <see langword="false"/> if the frame has no timestamp
+    /// (<see cref="TimeStamp"/> is then <see cref="TimeSpan.Zero"/>).
+    /// </summary>
+    internal static bool TryFromFrame(Utils.AVFrame frame, out FFCodecFrameInfo info)
+    {
+        Utils.Rational timeBase = frame.TimeBase;
+        long pts = frame.GetPresentationTimestamp();
+        long duration = frame.Duration;
+        bool hasTimestamp = pts != AutoGen.ffmpeg.AV_NOPTS_VALUE && timeBase.Denominator != 0;
+        info = new()
+        {
+            TimeStamp = hasTimestamp ? ToTimeSpan(pts, timeBase) : TimeSpan.Zero,
+            Duration = duration > 0 && timeBase.Denominator != 0 ? ToTimeSpan(duration, timeBase) : TimeSpan.Zero,
+        };
+        return hasTimestamp;
+    }
+
+    internal static TimeSpan ToTimeSpan(long value, Utils.Rational timeBase)
+        => TimeSpan.FromTicks((long)Math.Round(value * (double)timeBase.Numerator / timeBase.Denominator * TimeSpan.TicksPerSecond));
 }

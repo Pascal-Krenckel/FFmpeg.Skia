@@ -25,8 +25,26 @@
 		<RepositoryType>git</RepositoryType>
 		<PackageTags>ffmpeg; skia</PackageTags>
 		<PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
-		<Version>2.3.0</Version>
+		<!-- FFmpegMajor.Major.Minor.Patch, like FFmpegDotNet: 8.2.4.0 is built for FFmpeg 8, 9.2.4.0 for FFmpeg 9 -->
+		<Version>$(FFmpegMajor).2.4.0</Version>
+		<DefineConstants Condition="'$(FFmpegMajor)' == '9'">$(DefineConstants);FFMPEG9</DefineConstants>
 		<PackageReleaseNotes>
+			=== 2.4.0 ===
+			Builds for FFmpeg 8 (FFmpegDotNet 8.x, package version 8.2.4.0) and FFmpeg 9 (FFmpegDotNet 9.x, package version 9.2.4.0) from the same sources.
+			With FFmpeg 9 frames are converted with the dynamic SwsContext, which honours the frames' color properties (e.g. BT.709).
+			BugFix: copying frames whose rows are padded (most decoded frames) threw ArgumentOutOfRangeException (ToSKBitmap, ToSKImage, CopyTo, FFCodec2Skia, SKAnimatedImage).
+			BugFix: SKImage/SKBitmap.ToAVFrame and CopyTo ignored the row bytes of the image: skewed images and a heap overflow for images with padded rows (e.g. from AsSKImage).
+			BugFix: FFCodec2Skia reused a scaler for bitmaps of another size: heap overflow.
+			BugFix: cropped frames: AsSKBitmap/AsSKImage/Reference used a wrong row offset, CopyTo and FFCodec2Skia ignored the crop.
+			BugFix: SKBitmap.Reference wrote into the buffer of the previously referenced frame.
+			BugFix: AsSKBitmap/AsSKImage and FFCodec2Skia.Info used premultiplied alpha; FFmpeg's alpha is straight. Premultiplied Skia images are now converted.
+			BugFix: SKImage.ToAVFrame threw NullReferenceException for lazily decoded images.
+			BugFix: ToSKImage leaked the uncropped image.
+			BugFix: FFCodec2Skia.Create leaked the media source when the media has no video stream (now ArgumentException).
+			FFCodec2Skia.Seek(TimeSpan) now returns the frame visible at the requested time (it returned the key frame before it); Seek(long) uses the frame rate instead of FFmpeg's frame seeking, which most formats ignore.
+			FFCodec2Skia.Duration falls back to the media duration if the stream has none. NextImage throws on decoding errors instead of returning false.
+			SKVideo: Dispose after Stop threw; Dispose freed the frames while the decoding thread or a handler used them; Restart while playing was not synchronized and lost the timing; seeking in an Ended handler now continues playback (e.g. looping). Added the Faulted event.
+			SKAnimatedImage: frames were shown for the duration of the next frame; Stop allowed a second loop or manual decoding while the first loop was still running; Dispose during an operation could be undone by the operation; the AVFrame (and in DisposeAsync a bitmap) leaked; looping a still image busy-looped; Dispose from a ReadyToRender handler is safe.
 			=== 2.3.0 ===
 			Added SKAnimatedImage - a class that allows for both automatic and manual decoding auf image/video data.
 			=== 2.2.0 ===
@@ -55,7 +73,8 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="FFmpegDotNet" Version="8.1.2.11" />
+		<PackageReference Condition="'$(FFmpegMajor)' == '8'" Include="FFmpegDotNet" Version="[8.1.2.15,9)" />
+		<PackageReference Condition="'$(FFmpegMajor)' == '9'" Include="FFmpegDotNet" Version="[9.9.4,10)" />
 		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.400">
 		  <PrivateAssets>all</PrivateAssets>
 		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -66,5 +85,9 @@
 	<ItemGroup>
 		<Using Include="SkiaSharp" />
 	</ItemGroup>
+
+	<Target Name="CheckFFmpegMajor" BeforeTargets="Restore;CollectPackageReferences;Build">
+		<Error Condition="'$(FFmpegMajor)' != '8' And '$(FFmpegMajor)' != '9'" Text="FFmpegMajor must be 8 or 9 (is '$(FFmpegMajor)')." />
+	</Target>
 
 </Project>

@@ -11,7 +11,8 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="FFmpegDotNet.bin.winx64" Version="8.1.2.4" />
+		<PackageReference Condition="'$(FFmpegMajor)' == '8'" Include="FFmpegDotNet.bin.winx64" Version="8.1.2.4" />
+		<PackageReference Condition="'$(FFmpegMajor)' == '9'" Include="FFmpegDotNet.bin.winx64" Version="9.0.2.1" />
 		<PackageReference Include="SkiaSharp.Views.WPF" Version="4.150.1" />
 	</ItemGroup>
 

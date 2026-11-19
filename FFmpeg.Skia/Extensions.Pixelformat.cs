@@ -37,10 +37,10 @@ public static partial class Extensions
     public static SKColorType[] FFSupportedColorTypes { get; } =
     [
         SKColorType.Bgra8888,
+        SKColorType.Gray8,
         SKColorType.Rgb888x,
         SKColorType.Rgba8888,
         SKColorType.Rgb565,
-        SKColorType.Gray8,
         SKColorType.RgbaF16,
         SKColorType.RgbaF32,
     ];

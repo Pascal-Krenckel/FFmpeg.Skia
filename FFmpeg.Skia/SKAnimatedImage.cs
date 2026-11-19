@@ -1,13 +1,7 @@
 ﻿using FFmpeg.Formats;
-using FFmpeg.Helper.Exceptions;
 using FFmpeg.Threading;
 using FFmpeg.Utils;
-using System;
-using System.Collections.Generic;
-using System.ComponentModel;
 using System.Diagnostics;
-using System.Text;
-using System.Timers;
 
 namespace FFmpeg.Skia;
 
@@ -34,15 +28,23 @@ namespace FFmpeg.Skia;
 /// </remarks>
 public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
 {
+    /// <summary>Display time of a frame without duration or timestamps.</summary>
+    private static readonly TimeSpan DefaultFrameDelay = TimeSpan.FromMilliseconds(100);
+
     readonly MediaSource source;
-    readonly AVFrame frame = AVFrame.Allocate();
+    readonly AVFrame frame;
+    readonly FrameConverter converter;
     readonly int videoStreamIndex;
     SKBitmap frontBuffer, backBuffer;
-    readonly FFmpeg.Threading.FFmpegWorkQueue? workQueue;
-    CancellationTokenSource cts;
+    readonly FFmpegWorkQueue? workQueue;
+    CancellationTokenSource? cts;
     CancellableWorkItem? asyncOperation;
     Task decodingTask = Task.CompletedTask;
+    Task handlerTask = Task.CompletedTask;
+    TaskCompletionSource<bool> manualOperation = CompletedOperation();
+    readonly object stateLock = new();
     int decodingState = 0;
+    int released = 0;
 
     /// <summary>
     /// Gets the most recently decoded frame.
@@ -76,16 +78,34 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
     {
         if (videoStreamIndex == -1)
             videoStreamIndex = source.FindBestStream(MediaType.Video);
-        IndexOutOfRangeException.ThrowIfOutOfRange(videoStreamIndex, source.Streams.Count, nameof(videoStreamIndex));
+        if (videoStreamIndex < 0 || videoStreamIndex >= source.Streams.Count)
+            throw new ArgumentOutOfRangeException(nameof(videoStreamIndex), videoStreamIndex, "The media does not contain this (or any) video stream.");
+        if (source.Streams[videoStreamIndex].CodecParameters.MediaType != MediaType.Video)
+            throw new ArgumentException($"Stream {videoStreamIndex} is not a video stream.", nameof(videoStreamIndex));
         foreach (var stream in source.Streams)
             stream.Discard = Formats.DiscardFlags.All;
         source.Streams[videoStreamIndex].Discard = Formats.DiscardFlags.Default;
-        cts = new();
         this.source = source;
         this.videoStreamIndex = videoStreamIndex;
         this.workQueue = workQueue;
+        // allocated last: nothing native leaks if the checks above throw
         frontBuffer = new SKBitmap();
         backBuffer = new SKBitmap();
+        frame = AVFrame.Allocate();
+        converter = new FrameConverter();
+    }
+
+    private static SKAnimatedImage Create(MediaSource source, int videoIndex, FFmpegWorkQueue? workQueue)
+    {
+        try
+        {
+            return new(source, videoIndex, workQueue);
+        }
+        catch
+        {
+            source.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -116,11 +136,11 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
     /// <returns>
     /// A new <see cref="SKAnimatedImage"/> instance.
     /// </returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The media has no video stream, or <paramref name="videoIndex"/> is not a valid stream index.
+    /// </exception>
     public static SKAnimatedImage Create(Stream stream, int videoIndex = -1, FFmpegWorkQueue? workQueue = null, InputFormat? format = null, IDictionary<string, string>? options = null, HW.DeviceType hwDevice = HW.DeviceType.None)
-    {
-        MediaSource source = MediaSource.Open(stream, format, options, hwDevice);
-        return new(source, videoIndex, workQueue);
-    }
+        => Create(MediaSource.Open(stream, format, options, hwDevice), videoIndex, workQueue);
 
     /// <summary>
     /// Creates an <see cref="SKAnimatedImage"/> from a media URL.
@@ -150,39 +170,51 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
     /// <returns>
     /// A new <see cref="SKAnimatedImage"/> instance.
     /// </returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The media has no video stream, or <paramref name="videoIndex"/> is not a valid stream index.
+    /// </exception>
     public static SKAnimatedImage Create(string url, int videoIndex = -1, FFmpegWorkQueue? workQueue = null, InputFormat? format = null, IDictionary<string, string>? options = null, HW.DeviceType hwDevice = HW.DeviceType.None)
-    {
-        MediaSource source = MediaSource.Open(url, format, options, hwDevice);
-        return new(source, videoIndex, workQueue);
-    }
+        => Create(MediaSource.Open(url, format, options, hwDevice), videoIndex, workQueue);
 
-    private AVResult32 DecodeStepInternally(SKBitmap target, out FFCodecFrameInfo info)
+    #region Decoding steps
+
+    /// <summary>Decodes the next frame of the video stream into <paramref name="target"/>.</summary>
+    private AVResult32 DecodeInto(SKBitmap target)
     {
-        info = default;
-        AVResult32 result = source.ReadAndDecodeAVFrame(frame);
+        AVResult32 result;
+        do
+            result = source.ReadAndDecodeAVFrame(frame);
+        while (!result.IsError && result != videoStreamIndex);
         if (result.IsError)
             return result;
-        frame.CopyTo(target);
-        info = new()
-        {
-            TimeStamp = frame.GetPresentationTimestamp() * frame.TimeBase,
-            Duration = frame.Duration * frame.TimeBase,
-        };
+        FrameInterop.CopyToBitmap(frame, target, converter);
         return 0;
     }
 
-    private async Task<(AVResult32, FFCodecFrameInfo)> DecodeStepInternallyAsync(SKBitmap target, CancellationToken token)
+    private FFCodecFrameInfo CurrentTiming()
     {
-        AVResult32 result = await (asyncOperation = workQueue!.QueueFFmpegWorkItem(() => source.ReadAndDecodeAVFrame(frame), token)).ConfigureAwait(false);
-        if (result.IsError)
-            return (result, default);
-        frame.CopyTo(target);
-        return (0, new()
-        {
-            TimeStamp = frame.GetPresentationTimestamp() * frame.TimeBase,
-            Duration = frame.Duration * frame.TimeBase,
-        });
+        _ = FFCodecFrameInfo.TryFromFrame(frame, out FFCodecFrameInfo info);
+        return info;
     }
+
+    private async Task<(AVResult32, FFCodecFrameInfo)> DecodeStepAsync(SKBitmap target, CancellationToken token)
+    {
+        AVResult32 result;
+        if (workQueue != null)
+            result = await (asyncOperation = workQueue.QueueFFmpegWorkItem(() => DecodeInto(target), token)).ConfigureAwait(false);
+        else
+            result = DecodeInto(target);
+        return result.IsError ? (result, default) : (result, CurrentTiming());
+    }
+
+    private async Task<AVResult32> SeekStepAsync(TimeSpan time, CancellationToken token)
+        => workQueue != null
+            ? await (asyncOperation = workQueue.QueueFFmpegWorkItem(() => source.SeekExactly(time, videoStreamIndex), token)).ConfigureAwait(false)
+            : source.SeekExactly(time, videoStreamIndex);
+
+    #endregion
+
+    #region Manual decoding
 
     /// <summary>
     /// Decodes the next frame of the animation.
@@ -199,16 +231,14 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
     /// </exception>
     public bool DecodeNextImage()
     {
-        ObjectDisposedException.ThrowIfTrue(State == DecodingState.Disposed, this);
-        using (BeginOperation(DecodingState.Manual))
+        using (BeginManualOperation())
         {
-
-            AVResult32 result = DecodeStepInternally(backBuffer, out var frameInfo);
+            AVResult32 result = DecodeInto(backBuffer);
             if (result == AVResult32.EndOfFile)
                 return false;
             result.ThrowIfError();
             (frontBuffer, backBuffer) = (backBuffer, frontBuffer);
-            FrameInfo = frameInfo;
+            FrameInfo = CurrentTiming();
             return true;
         }
     }
@@ -232,15 +262,14 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
     /// </exception>
     public async Task<bool> DecodeNextImageAsync(CancellationToken token = default)
     {
-        ObjectDisposedException.ThrowIfTrue(State == DecodingState.Disposed, this);
         CheckAsync();
-        using (BeginOperation(DecodingState.Manual))
+        using (BeginManualOperation())
         {
-            (var result, var info) = await DecodeStepInternallyAsync(backBuffer, token).ConfigureAwait(false);
+            (var result, var info) = await DecodeStepAsync(backBuffer, token).ConfigureAwait(false);
             if (result == AVResult32.EndOfFile)
                 return false;
             result.ThrowIfError();
-            (backBuffer, frontBuffer) = (frontBuffer, backBuffer);
+            (frontBuffer, backBuffer) = (backBuffer, frontBuffer);
             FrameInfo = info;
             return true;
         }
@@ -267,8 +296,7 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
     /// </exception>
     public AVResult32 Seek(TimeSpan time)
     {
-        ObjectDisposedException.ThrowIfTrue(State == DecodingState.Disposed, this);
-        using (BeginOperation(DecodingState.Manual))
+        using (BeginManualOperation())
         {
             var result = source.SeekExactly(time, videoStreamIndex);
             if (!result.IsError)
@@ -298,23 +326,27 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
     /// </exception>
     public async Task<AVResult32> SeekAsync(TimeSpan time, CancellationToken token = default)
     {
-        ObjectDisposedException.ThrowIfTrue(State == DecodingState.Disposed, this);
         CheckAsync();
-        using (BeginOperation(DecodingState.Manual))
+        using (BeginManualOperation())
         {
-            var result = await (asyncOperation = workQueue!.QueueFFmpegWorkItem(() => source.SeekExactly(time, videoStreamIndex), token)).ConfigureAwait(false);
+            var result = await SeekStepAsync(time, token).ConfigureAwait(false);
             if (!result.IsError)
                 FrameInfo = default;
             return result;
         }
     }
 
+    #endregion
+
+    #region Automatic decoding
+
     /// <summary>
     /// Starts automatic decoding and presentation of the animation.
     /// </summary>
     /// <param name="looping">
     /// <see langword="true"/> to restart the animation when its end is reached;
-    /// otherwise, playback stops when the end is reached.
+    /// otherwise, playback stops when the end is reached. An image with a single frame
+    /// always stops after that frame.
     /// </param>
     /// <remarks>
     /// <para>
@@ -322,12 +354,14 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
     /// </para>
     /// <para>
     /// A <see cref="ReadyToRender"/> event is raised whenever a new frame is ready
-    /// to be presented. The decoding loop waits for the event handlers to complete
+    /// to be presented. Each frame is presented for its duration (or the time to the next frame),
+    /// measured from the moment it is presented. The decoding loop waits for the event handlers to complete
     /// before decoding the next frame, allowing presentation to provide back-pressure
     /// when necessary.
     /// </para>
     /// <para>
-    /// Automatic decoding and manual decoding or seeking are mutually exclusive.
+    /// Automatic decoding and manual decoding or seeking are mutually exclusive. After <see cref="Stop"/>, wait for
+    /// the returned task before starting again or decoding manually.
     /// </para>
     /// </remarks>
     /// <exception cref="ObjectDisposedException">
@@ -335,23 +369,18 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Another decoding or seeking operation is currently active, or automatic
-    /// playback is already running.
+    /// playback is already running or still stopping.
     /// </exception>
     public void Start(bool looping)
     {
-        ObjectDisposedException.ThrowIfTrue(State == DecodingState.Disposed, this);
-        BeginOperation(DecodingState.Automatic, DecodingState.None);
-        cts.Dispose();
+        BeginOperation(DecodingState.Automatic);
+        cts?.Dispose(); // the previous loop has completed, otherwise BeginOperation had thrown
         cts = new();
-
-        if (workQueue != null)
-            decodingTask = decodingTask = Task.Factory.StartNew(async () => await DecodingLoopAsync(looping, cts.Token).ConfigureAwait(false),
-                                                                    CancellationToken.None,
-                                                                    TaskCreationOptions.LongRunning,
-                                                                    TaskScheduler.Default).Unwrap();
-        else
-            decodingTask = Task.Factory.StartNew(() => DecodingLoopSync(looping, cts.Token), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-
+        CancellationToken token = cts.Token;
+        decodingTask = Task.Factory.StartNew(() => DecodingLoopAsync(looping, token),
+                                             CancellationToken.None,
+                                             TaskCreationOptions.LongRunning,
+                                             TaskScheduler.Default).Unwrap();
     }
 
     /// <summary>
@@ -364,118 +393,125 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
     /// The image has been disposed.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Automatic playback is not currently running.
+    /// A manual decoding or seeking operation is active.
     /// </exception>
     public Task Stop()
     {
-        ObjectDisposedException.ThrowIfTrue(State == DecodingState.Disposed, this);
-        if (decodingTask.IsCompleted && State == DecodingState.None)
-            return decodingTask; // if task completed exit without throwing
-        BeginOperation(DecodingState.None, DecodingState.Automatic); // throw if no decoding task is currently running
-        cts.Cancel();
-        cts.Dispose();
-        return decodingTask;
-    }
-    private void DecodingLoopSync(bool looping, CancellationToken token)
-    {
-        if (State == DecodingState.Disposed)
-            return;
-        try
+        ThrowIfDisposed();
+        switch (State)
         {
-            Stopwatch timer = Stopwatch.StartNew();
-            while (!token.IsCancellationRequested)
-            {
-                var result = DecodeStepInternally(backBuffer, out var info);
-                if (result == AVResult32.EndOfFile)
-                    if (looping)
-                    {
-                        source.SeekExactly(TimeSpan.Zero, videoStreamIndex).ThrowIfError();
-                        FrameInfo = default;
-                        timer.Restart();
-                        continue;
-                    }
-                    else
-                    {
-                        _ = Finished?.InvokeAsync(this, EventArgs.Empty);
-                        return;
-                    }
-                result.ThrowIfError();
-                Sleep(info.Duration - timer.Elapsed);
-                (backBuffer, frontBuffer) = (frontBuffer, backBuffer);
-                try
-                {
-                    ReadyToRender?.InvokeAsync(this, EventArgs.Empty).Wait(token);
-                }
-                catch { }
-                timer.Restart();
-            }
-        }
-        catch (OperationCanceledException)
-        {
-
-        }
-        catch (Exception ex)
-        {
-            _ = Faulted?.InvokeAsync(this, ex);
-        }
-        finally
-        {
-            EndOperation();
+            case DecodingState.Automatic:
+                cts?.Cancel();
+                return decodingTask;
+            case DecodingState.None:
+                return decodingTask; // not running (anymore)
+            default:
+                throw new InvalidOperationException("Automatic playback is not running; a manual operation is active.");
         }
     }
 
     private async Task DecodingLoopAsync(bool looping, CancellationToken token)
     {
-        if (State == DecodingState.Disposed)
-            return;
         try
         {
-            Stopwatch timer = Stopwatch.StartNew();
+            Stopwatch shownFor = new();
+            FFCodecFrameInfo? shown = null;   // the frame on screen
+            int framesSinceStart = 0;
+
             while (!token.IsCancellationRequested)
             {
-                (var result, var info) = await DecodeStepInternallyAsync(backBuffer, token).ConfigureAwait(false);
+                (var result, var info) = await DecodeStepAsync(backBuffer, token).ConfigureAwait(false);
                 if (result == AVResult32.EndOfFile)
-                    if (looping)
+                {
+                    if (looping && framesSinceStart > 1)
                     {
-                        result = await workQueue!.QueueFFmpegWorkItem(() => source.SeekExactly(TimeSpan.Zero, videoStreamIndex), token).ConfigureAwait(false);
-                        result.ThrowIfError();
-                        FrameInfo = default;
-                        timer.Restart();
+                        (await SeekStepAsync(TimeSpan.Zero, token).ConfigureAwait(false)).ThrowIfError();
+                        framesSinceStart = 0;
                         continue;
                     }
-                    else
-                    {
-                        _ = Finished?.InvokeAsync(this, EventArgs.Empty);
-                        return;
-                    }
-
-                result.ThrowIfError();
-                await SleepAsync(info.Duration - timer.Elapsed, token).ConfigureAwait(false);
-                (backBuffer, frontBuffer) = (frontBuffer, backBuffer);
-                try
-                {
-                    var awaitable = ReadyToRender?.InvokeAsync(this, EventArgs.Empty, token).ConfigureAwait(false);
-                    if (awaitable != null)
-                        await awaitable.Value;
+                    await WaitAsync(shown, null, shownFor, token).ConfigureAwait(false); // let the last frame be shown for its duration
+                    Raise(Finished, EventArgs.Empty);
+                    return;
                 }
-                catch (OperationCanceledException) { throw; }
-                catch { }
-                timer.Restart();
+                result.ThrowIfError();
+                framesSinceStart++;
+
+                // present the new frame when the current one has been shown long enough
+                await WaitAsync(shown, info, shownFor, token).ConfigureAwait(false);
+                (backBuffer, frontBuffer) = (frontBuffer, backBuffer);
+                FrameInfo = info;
+                shown = info;
+                shownFor.Restart();
+
+                EventHandler? handler = ReadyToRender;
+                if (handler != null)
+                {
+                    handlerTask = Task.Run(() => handler(this, EventArgs.Empty));
+                    try
+                    {
+                        await WhenCompletedOrCancelled(handlerTask, token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch { /* an exception in a handler does not stop the playback */ }
+                }
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-
         }
         catch (Exception ex)
         {
-            _ = Faulted?.InvokeAsync(this, ex);
+            Raise(Faulted, ex);
         }
         finally
         {
-            EndOperation();
+            _ = Interlocked.CompareExchange(ref decodingState, (int)DecodingState.None, (int)DecodingState.Automatic);
         }
     }
+
+    /// <summary>Waits until <paramref name="shown"/> has been displayed for its duration.</summary>
+    private static Task WaitAsync(FFCodecFrameInfo? shown, FFCodecFrameInfo? next, Stopwatch shownFor, CancellationToken token)
+    {
+        if (shown is not FFCodecFrameInfo current)
+            return Task.CompletedTask; // first frame: present immediately
+        TimeSpan displayTime = current.Duration;
+        if (displayTime <= TimeSpan.Zero && next is FFCodecFrameInfo following)
+            displayTime = following.TimeStamp - current.TimeStamp;
+        if (displayTime <= TimeSpan.Zero)
+            displayTime = DefaultFrameDelay;
+        TimeSpan wait = displayTime - shownFor.Elapsed;
+        return wait > TimeSpan.Zero ? Task.Delay(wait, token) : Task.CompletedTask;
+    }
+
+    private static async Task WhenCompletedOrCancelled(Task task, CancellationToken token)
+    {
+        if (!task.IsCompleted)
+        {
+            TaskCompletionSource<bool> cancelled = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            using (token.Register(() => cancelled.TrySetResult(true)))
+            {
+                if (await Task.WhenAny(task, cancelled.Task).ConfigureAwait(false) != task)
+                    token.ThrowIfCancellationRequested();
+            }
+        }
+        await task.ConfigureAwait(false);
+    }
+
+    private void Raise<T>(EventHandler<T>? handler, T args)
+    {
+        if (handler != null)
+            _ = Task.Run(() => { try { handler(this, args); } catch { } });
+    }
+
+    private void Raise(EventHandler? handler, EventArgs args)
+    {
+        if (handler != null)
+            _ = Task.Run(() => { try { handler(this, args); } catch { } });
+    }
+
+    #endregion
+
+    #region Events
 
     /// <summary>
     /// Occurs when a newly decoded frame is ready to be presented.
@@ -484,6 +520,7 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
     /// <para>
     /// The event does not perform or require rendering. Consumers may use the event
     /// to present, copy, inspect, or otherwise process the current <see cref="Frame"/>.
+    /// The event is raised on a thread-pool thread.
     /// </para>
     /// <para>
     /// During automatic playback, the decoding loop waits for all event handlers to
@@ -506,48 +543,56 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
     /// </remarks>
     public event EventHandler? Finished;
 
-    private void Sleep(TimeSpan timeSpan)
+    #endregion
+
+    #region State
+
+    private static TaskCompletionSource<bool> CompletedOperation()
     {
-        if (timeSpan > TimeSpan.Zero)
-            Thread.Sleep(timeSpan);
+        TaskCompletionSource<bool> tcs = new();
+        tcs.SetResult(true);
+        return tcs;
     }
 
-    private Task SleepAsync(TimeSpan timeSpan, CancellationToken token)
+    private readonly struct OperationScope(SKAnimatedImage image, TaskCompletionSource<bool> operation) : IDisposable
     {
-        if (timeSpan > TimeSpan.Zero)
-            return Task.Delay(timeSpan, token);
-        return Task.CompletedTask;
+        public void Dispose()
+        {
+            // Only Manual -> None: if the image was disposed meanwhile, the state stays Disposed.
+            _ = Interlocked.CompareExchange(ref image.decodingState, (int)DecodingState.None, (int)DecodingState.Manual);
+            operation.TrySetResult(true); // lets Dispose continue
+        }
     }
 
-
-    private readonly struct OperationLock(SKAnimatedImage image) : IDisposable
+    private OperationScope BeginManualOperation()
     {
-        public readonly void Dispose() => Volatile.Write(ref image.decodingState, (int)DecodingState.None);
-    }
-    private OperationLock BeginOperation(DecodingState state)
-    {
-        if (Interlocked.CompareExchange(ref decodingState, (int)state, (int)DecodingState.None) != (int)DecodingState.None)
-            throw new InvalidOperationException("");
-        return new OperationLock(this);
-    }
-
-    private void BeginOperation(DecodingState state, DecodingState allowed)
-    {
-        if (Interlocked.CompareExchange(ref decodingState, (int)state, (int)allowed) != (int)allowed)
-            throw new InvalidOperationException("");
+        TaskCompletionSource<bool> operation = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (stateLock) // Dispose reads the state and the operation together
+        {
+            BeginOperation(DecodingState.Manual);
+            manualOperation = operation;
+        }
+        return new OperationScope(this, operation);
     }
 
-    private void EndOperation()
+    private void BeginOperation(DecodingState state)
     {
-        var state = Volatile.Read(ref decodingState);
-        if (state == (int)DecodingState.Disposed)
-            return;
-        _ = Interlocked.CompareExchange(ref decodingState, (int)DecodingState.None, state);
+        int previous = Interlocked.CompareExchange(ref decodingState, (int)state, (int)DecodingState.None);
+        if (previous == (int)DecodingState.Disposed)
+            throw new ObjectDisposedException(nameof(SKAnimatedImage));
+        if (previous != (int)DecodingState.None)
+            throw new InvalidOperationException($"Another operation is active ({(DecodingState)previous}).");
+    }
 
+    private void ThrowIfDisposed()
+    {
+        if (State == DecodingState.Disposed)
+            throw new ObjectDisposedException(nameof(SKAnimatedImage));
     }
 
     private void CheckAsync()
     {
+        ThrowIfDisposed();
         if (workQueue is null)
         {
             throw new InvalidOperationException(
@@ -555,34 +600,58 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
         }
     }
 
+    #endregion
+
+    #region Dispose
+
+    /// <summary>Cancels running operations; returns a task that completes when they no longer use FFmpeg.</summary>
+    private Task? BeginDispose()
+    {
+        Task operation;
+        lock (stateLock)
+        {
+            if ((DecodingState)Interlocked.Exchange(ref decodingState, (int)DecodingState.Disposed) == DecodingState.Disposed)
+                return null;
+            operation = manualOperation.Task;
+        }
+        asyncOperation?.Cancel();
+        cts?.Cancel();
+        return Task.WhenAll(decodingTask, operation);
+    }
+
+    private void Release()
+    {
+        if (Interlocked.Exchange(ref released, 1) != 0)
+            return;
+        source.Dispose();
+        frame.Dispose();
+        converter.Dispose();
+        cts?.Dispose();
+        SKBitmap front = frontBuffer, back = backBuffer;
+        // A ReadyToRender handler may still use Frame.
+        _ = handlerTask.ContinueWith(_ =>
+        {
+            front.Dispose();
+            back.Dispose();
+        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+    }
+
     /// <summary>
     /// Releases all resources used by the animated image.
     /// </summary>
     /// <remarks>
     /// If automatic or asynchronous decoding is currently active, disposal cancels
     /// the operation and waits for it to finish before releasing the underlying
-    /// FFmpeg and SkiaSharp resources.
+    /// FFmpeg resources. The bitmaps are released once a running <see cref="ReadyToRender"/> handler has returned,
+    /// so Dispose may also be called from a handler.
     /// </remarks>
     public void Dispose()
     {
-        var oldValue = (DecodingState)Interlocked.Exchange(ref decodingState, (int)DecodingState.Disposed);
-        if (oldValue == DecodingState.Disposed)
+        Task? pending = BeginDispose();
+        if (pending == null)
             return;
-        if (oldValue == DecodingState.Manual)
-        {
-            asyncOperation?.Cancel(); // cancel the last asyncOperation
-            try
-            {
-                asyncOperation?.Task.Wait(); // wait for the task to finish, should return immediatly if not currently running.
-            }
-            catch { }
-        }
-        cts.Cancel();
-        decodingTask.Wait();
-        cts.Dispose();
-        source.Dispose();
-        frontBuffer.Dispose();
-        backBuffer.Dispose();
+        try { pending.Wait(); } catch { /* reported by the operations themselves */ }
+        Release();
     }
 
     /// <summary>
@@ -591,37 +660,24 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
     /// <remarks>
     /// If automatic or asynchronous decoding is currently active, disposal cancels
     /// the operation and waits for it to finish before releasing the underlying
-    /// FFmpeg and SkiaSharp resources.
+    /// FFmpeg resources. The bitmaps are released once a running <see cref="ReadyToRender"/> handler has returned.
     /// </remarks>
     public async ValueTask DisposeAsync()
     {
-        var oldValue = (DecodingState)Interlocked.Exchange(ref decodingState, (int)DecodingState.Disposed);
-        if (oldValue == DecodingState.Disposed)
+        Task? pending = BeginDispose();
+        if (pending == null)
             return;
-        if (oldValue == DecodingState.Manual)
-        {
-            asyncOperation?.Cancel(); // cancel the last asyncOperation
-            try
-            {
-                var task = asyncOperation?.Task;
-                if (task != null)
-                    await task.ConfigureAwait(false);// wait for the task to finish, should return immediatly if not currently running.
-            }
-            catch { }
-        }
-        cts.Cancel();
-        await decodingTask.ConfigureAwait(false);
-        cts.Dispose();
-        source.Dispose();
-        frontBuffer.Dispose();
-
+        try { await pending.ConfigureAwait(false); } catch { /* reported by the operations themselves */ }
+        Release();
     }
+
+    #endregion
 }
 
-    /// <summary>
-    /// Specifies the current state of an animated image decoder.
-    /// </summary>
-    public enum DecodingState
+/// <summary>
+/// Specifies the current state of an animated image decoder.
+/// </summary>
+public enum DecodingState
 {
     /// <summary>
     /// The decoder is idle and no decoding operation is currently active.
@@ -650,6 +706,4 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
     /// The <see cref="SKAnimatedImage"/> has been disposed and can no longer be used.
     /// </summary>
     Disposed = 3,
-
-
 }

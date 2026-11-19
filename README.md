@@ -31,3 +31,31 @@ This library builds on top of the main `FFmpeg` project and offers:
 ### Nuget-Package
 
  [FFmpegDotNet.Skia](https://www.nuget.org/packages/FFmpegDotNet.Skia)
+
+### FFmpeg 8 and FFmpeg 9
+
+The package is built for both FFmpeg major versions from the same sources. The first number of the package version
+is the FFmpeg major version, like for [FFmpegDotNet](https://www.nuget.org/packages/FFmpegDotNet):
+
+| FFmpegDotNet.Skia | FFmpegDotNet | FFmpeg |
+|---|---|---|
+| 9.x (e.g. 9.2.4.0) | 9.x | 9.0 |
+| 8.x (e.g. 8.2.4.0) | 8.x | 8.1 |
+
+Use the one that matches the FFmpegDotNet version (and the FFmpeg binaries) of your application.
+With FFmpeg 9, frames are converted with FFmpeg's dynamic scaler, which takes the color properties of the frames
+(e.g. BT.709) into account.
+
+To build a specific version:
+
+```bash
+dotnet pack FFmpeg.Skia -c Release -p:FFmpegMajor=8
+dotnet pack FFmpeg.Skia -c Release -p:FFmpegMajor=9   # default
+```
+
+### Notes
+
+- FFmpeg stores straight (unpremultiplied) alpha. Skia objects created from frames use `SKAlphaType.Unpremul`
+  (or `Opaque` for color types without alpha); premultiplied Skia images are converted when copied into frames.
+- The crop values of a frame are applied: only the visible region is converted.
+- `AsSKBitmap`/`AsSKImage` share the frame's buffer without copying when the pixel format is supported by Skia.

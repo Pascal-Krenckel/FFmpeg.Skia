@@ -23,7 +23,7 @@ public partial class Videoplayer : Window
     {
         InitializeComponent();
         skvideo.FrameReadyToRender += Skvideo_FrameReadyToRender;
-        skvideo.Ended += (_, _) => skvideo.Seek(0); // seek to the start
+        skvideo.Ended += (_, _) => skvideo.Seek(TimeSpan.Zero); // seeking in Ended loops the video
     }
 
     private void Skvideo_FrameReadyToRender(object? sender, (SkiaSharp.SKBitmap frame, FFCodecFrameInfo frameInfo) e)

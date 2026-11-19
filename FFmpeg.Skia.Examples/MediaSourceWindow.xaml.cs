@@ -37,7 +37,7 @@ public partial class MediaSourceWindow : Window
                     AVResult32 result = source.ReadAndDecodeAVFrame(frame);
                     if (result == AVResult32.EndOfFile)
                     {
-                        source.Seek(0).ThrowIfError(); // restart stream
+                        source.Seek(TimeSpan.Zero).ThrowIfError(); // restart stream
                         result = source.ReadAndDecodeAVFrame(frame);
                     }
                     result.ThrowIfError();

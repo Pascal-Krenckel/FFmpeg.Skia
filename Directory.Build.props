@@ -1,0 +1,12 @@
+<Project>
+	<PropertyGroup>
+		<!--
+			The FFmpeg major version to build against. Both are built from the same sources:
+			  9 -> FFmpegDotNet 9.x (FFmpeg 9.0), package FFmpegDotNet.Skia 9.x
+			  8 -> FFmpegDotNet 8.x (FFmpeg 8.1), package FFmpegDotNet.Skia 8.x
+			dotnet pack FFmpeg.Skia -c Release -p:FFmpegMajor=8
+			dotnet pack FFmpeg.Skia -c Release -p:FFmpegMajor=9
+		-->
+		<FFmpegMajor Condition="'$(FFmpegMajor)' == ''">9</FFmpegMajor>
+	</PropertyGroup>
+</Project>

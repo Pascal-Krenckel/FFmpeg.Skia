@@ -1,5 +1,4 @@
-﻿using FFmpeg.Threading;
-using FFmpeg.Utils;
+﻿using FFmpeg.Utils;
 using System.Diagnostics;
 
 namespace FFmpeg.Skia;
@@ -30,18 +29,24 @@ public class SKVideo(FFCodec2Skia video) : IDisposable
     private SKBitmap? frame = null;
 
     private readonly object _lock = new();
-    private static readonly TaskFactory factory = new(default, TaskCreationOptions.LongRunning, TaskContinuationOptions.None,TaskScheduler.Default);
+    private static readonly TaskFactory factory = new(default, TaskCreationOptions.LongRunning, TaskContinuationOptions.None, TaskScheduler.Default);
 
 
     private readonly FFCodec2Skia video = video ?? throw new ArgumentNullException(nameof(video));
     private CancellationTokenSource cts = new();
     private Task decodingTask = Task.CompletedTask;
+    private Task eventTask = Task.CompletedTask;
+
+    /// <summary>Incremented by every seek; lets the decoding loop notice a seek made in an <see cref="Ended"/> handler.</summary>
+    private int seekVersion;
+    private bool renewTimer = false;
+    private int disposed;
 
     #region Properties
     /// <summary>
     /// Gets whether this instance has been disposed.
     /// </summary>
-    public bool Disposed { get; private set; }
+    public bool Disposed => Volatile.Read(ref disposed) != 0;
 
     /// <summary>
     /// Gets the duration of the video.
@@ -71,10 +76,16 @@ public class SKVideo(FFCodec2Skia video) : IDisposable
     /// <summary>
     /// Gets timing information for the most recently decoded frame.
     /// </summary>
-    public FFCodecFrameInfo CurrentFrameInfo { get; private set; }    
+    public FFCodecFrameInfo CurrentFrameInfo { get; private set; }
     #endregion
 
     #region Methods
+    private void ThrowIfDisposed()
+    {
+        if (Disposed)
+            throw new ObjectDisposedException(nameof(SKVideo));
+    }
+
     /// <summary>
     /// Starts playback from the beginning of the video.
     /// </summary>
@@ -83,21 +94,16 @@ public class SKVideo(FFCodec2Skia video) : IDisposable
     /// </remarks>
     public void Start()
     {
-        if (Disposed)
-            throw new ObjectDisposedException(nameof(SKVideo));
-        if (!decodingTask.IsCompleted)
-            return; // Already running
+        ThrowIfDisposed();
         lock (_lock)
         {
             if (!decodingTask.IsCompleted)
                 return; // Already running
-            cts?.Cancel();
-            cts?.Dispose();
-            cts = new CancellationTokenSource();
             _ = video.Restart();
-            decodingTask = factory.StartNew(() => DecodingTask(cts.Token), cts.Token);
-            Started?.Invoke(this, EventArgs.Empty);
+            seekVersion++;
+            StartDecoding();
         }
+        Started?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
@@ -108,11 +114,13 @@ public class SKVideo(FFCodec2Skia video) : IDisposable
     /// </remarks>
     public void Pause()
     {
-        if (Disposed)
-            throw new ObjectDisposedException(nameof(SKVideo));
-        if (decodingTask.IsCompleted)
-            return; // Not running
-        cts.Cancel();
+        ThrowIfDisposed();
+        lock (_lock)
+        {
+            if (decodingTask.IsCompleted)
+                return; // Not running
+            cts.Cancel();
+        }
         Paused?.Invoke(this, EventArgs.Empty);
     }
 
@@ -121,65 +129,66 @@ public class SKVideo(FFCodec2Skia video) : IDisposable
     /// </summary>
     public void Resume()
     {
-        if (Disposed)
-            throw new ObjectDisposedException(nameof(SKVideo));
-        if (!decodingTask.IsCompleted)
-            return; // Already running
+        ThrowIfDisposed();
         lock (_lock)
         {
             if (!decodingTask.IsCompleted)
                 return; // Already running
-            cts?.Dispose();
-            cts = new CancellationTokenSource();
-            decodingTask = factory.StartNew(() => DecodingTask(cts.Token), cts.Token);
-            Resumed?.Invoke(this, EventArgs.Empty);
+            StartDecoding();
         }
+        Resumed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Starts the decoding loop; called under the lock while no loop is running.</summary>
+    private void StartDecoding()
+    {
+        cts.Dispose(); // the previous loop has completed
+        cts = new CancellationTokenSource();
+        CancellationToken token = cts.Token;
+        decodingTask = factory.StartNew(() => DecodingLoop(token), token);
     }
 
     /// <summary>
     /// Stops playback.
     /// </summary>
     /// <remarks>
-    /// Unlike <see cref="Pause"/>, playback cannot be resumed from the current
-    /// position. Use <see cref="Start"/> or <see cref="Restart"/> to begin playback again.
+    /// <see cref="Stopped"/> is raised once the decoding thread has finished.
+    /// Use <see cref="Start"/> or <see cref="Restart"/> to begin playback again.
     /// </remarks>
     public void Stop()
     {
-        if (Disposed)
-            throw new ObjectDisposedException(nameof(SKVideo));
-        if (decodingTask.IsCompleted)
-            return; // Not running
+        ThrowIfDisposed();
+        Task task;
         lock (_lock)
         {
             if (decodingTask.IsCompleted)
-                return; // Already stopped
-
-
+                return; // Not running
             cts.Cancel();
-            CancellationTokenSource source = cts;
-            _ = decodingTask.ContinueWith(t =>
-            {
-                source?.Dispose();
-                Stopped?.Invoke(this, EventArgs.Empty);
-            });
-            cts.Dispose();
+            task = decodingTask;
         }
+        _ = task.ContinueWith(_ => Stopped?.Invoke(this, EventArgs.Empty), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
     }
 
     /// <summary>
     /// Restarts playback from the beginning of the video.
     /// </summary>
+    /// <remarks>
+    /// If playback is running, it continues from the beginning; otherwise it is started.
+    /// </remarks>
     public void Restart()
     {
-        if (Disposed)
-            throw new ObjectDisposedException(nameof(SKVideo));
-        if (decodingTask.IsCompleted)
+        ThrowIfDisposed();
+        lock (_lock)
         {
-            _ = video.Restart();
-            Start();
+            if (!decodingTask.IsCompleted)
+            {
+                _ = video.Restart();
+                renewTimer = true;
+                seekVersion++;
+                return;
+            }
         }
-        else
-            _ = video.Restart(); // Restart the video without starting a new task
+        Start();
     }
 
     /// <summary>
@@ -191,13 +200,16 @@ public class SKVideo(FFCodec2Skia video) : IDisposable
     /// <returns>
     /// An <see cref="AVResult32"/> indicating whether the seek operation succeeded.
     /// </returns>
+    /// <remarks>
+    /// Seeking from an <see cref="Ended"/> handler continues playback from the new position.
+    /// </remarks>
     public AVResult32 Seek(TimeSpan timeSpan)
     {
-        if (Disposed)
-            throw new ObjectDisposedException(nameof(SKVideo));
+        ThrowIfDisposed();
         lock (_lock)
         {
             renewTimer = true; // Reset the timer for the new seek position
+            seekVersion++;
             return video.Seek(timeSpan);
         }
     }
@@ -211,73 +223,98 @@ public class SKVideo(FFCodec2Skia video) : IDisposable
     /// <returns>
     /// An <see cref="AVResult32"/> indicating whether the seek operation succeeded.
     /// </returns>
+    /// <remarks>
+    /// See <see cref="FFCodec2Skia.Seek(long)"/>. Seeking from an <see cref="Ended"/> handler continues playback
+    /// from the new position.
+    /// </remarks>
     public AVResult32 Seek(long frameIndex)
     {
-        if (Disposed)
-            throw new ObjectDisposedException(nameof(SKVideo));
+        ThrowIfDisposed();
         lock (_lock)
         {
             renewTimer = true; // Reset the timer for the new seek position
+            seekVersion++;
             return video.Seek(frameIndex);
         }
     }
-    private bool renewTimer = false;
-    private void DecodingTask(CancellationToken token)
+
+    private void DecodingLoop(CancellationToken token)
     {
-        renewTimer = true;
+        lock (_lock)
+            renewTimer = true;
         TimeSpan firstFrame = TimeSpan.Zero;
         Stopwatch timer = Stopwatch.StartNew();
-        Task eventTask = Task.CompletedTask;
-        FFCodecFrameInfo frameInfo = default;
 
-        while (!token.IsCancellationRequested)
+        try
         {
-            lock (_lock)
+            while (!token.IsCancellationRequested)
             {
-
-                if (backbuffer != null)
+                FFCodecFrameInfo frameInfo;
+                bool decoded;
+                int version;
+                lock (_lock)
                 {
-                    if (!video.NextImage(backbuffer, out frameInfo))
+                    if (token.IsCancellationRequested)
+                        break;
+                    backbuffer ??= new SKBitmap();
+                    decoded = video.NextImage(backbuffer, out frameInfo);
+                    version = seekVersion;
+                    if (decoded && renewTimer)
                     {
-                        backbuffer.Dispose();
-                        backbuffer = null;
+                        firstFrame = frameInfo.TimeStamp;
+                        timer.Restart();
+                        renewTimer = false;
                     }
                 }
-                else
-                {
-                    backbuffer = video.NextImage(out frameInfo);
-                }
 
-                if (backbuffer == null)
+                if (!decoded)
                 {
-                    Ended?.Invoke(this, EventArgs.Empty);
+                    // Raised on another thread so that a handler can block (e.g. Dispatcher.Invoke) without
+                    // dead-locking Dispose, which cancels the wait.
+                    EventHandler? ended = Ended;
+                    if (ended != null)
+                    {
+                        try
+                        {
+                            Task.Run(() => ended(this, EventArgs.Empty)).Wait(token);
+                        }
+                        catch (AggregateException) { /* an exception in a handler does not stop the player */ }
+                    }
+                    lock (_lock)
+                    {
+                        if (seekVersion != version && !token.IsCancellationRequested)
+                            continue; // the handler seeked (e.g. to loop the video)
+                    }
                     break;
                 }
-                if (renewTimer)
+
+                TimeSpan timeToSleep = frameInfo.TimeStamp - firstFrame - timer.Elapsed;
+                if (timeToSleep > TimeSpan.Zero && token.WaitHandle.WaitOne(timeToSleep))
+                    break; // cancelled while waiting
+
+                EventHandler<(SKBitmap frame, FFCodecFrameInfo frameInfo)>? handler = FrameReadyToRender;
+                if (handler != null && eventTask.IsCompleted)
                 {
-                    firstFrame = frameInfo.TimeStamp;
-                    timer.Restart();
-                    renewTimer = false;
+                    SKBitmap f = backbuffer!; // Capture the current frame
+                    FFCodecFrameInfo info = frameInfo; // Capture frameInfo
+                    eventTask = Task.Run(() =>
+                    {
+                        try { handler(this, (f, info)); }
+                        catch { /* an exception in a render handler does not stop the player */ }
+                    });
+                    (frame, backbuffer) = (backbuffer, frame); // Swap buffers; the handler's bitmap is not decoded into until it returns
                 }
+                CurrentFrameInfo = frameInfo;
             }
-
-            TimeSpan timeToSleep = frameInfo.TimeStamp - timer.Elapsed - firstFrame;
-
-            if (timeToSleep > TimeSpan.Zero)
-                Thread.Sleep(timeToSleep);
-
-            if (FrameReadyToRender != null && eventTask.IsCompleted)
-            {
-                SKBitmap f = backbuffer; // Capture the current frame
-                FFCodecFrameInfo info = frameInfo; // Capture frameInfo
-                eventTask = Task.Run(() =>
-                               {
-                                   FrameReadyToRender(this, (f, info));
-                               }, token);
-
-                (frame, backbuffer) = (backbuffer, frame); // Swap buffers
-            }
-            CurrentFrameInfo = frameInfo;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            EventHandler<Exception>? faulted = Faulted;
+            if (faulted != null)
+                _ = Task.Run(() => faulted(this, ex));
         }
     }
 
@@ -289,6 +326,10 @@ public class SKVideo(FFCodec2Skia video) : IDisposable
     /// <summary>
     /// Occurs when playback reaches the end of the video.
     /// </summary>
+    /// <remarks>
+    /// The event is raised on a thread-pool thread. If a handler seeks (<see cref="Seek(TimeSpan)"/>,
+    /// <see cref="Seek(long)"/> or <see cref="Restart"/>), playback continues from the new position, e.g. to loop.
+    /// </remarks>
     public event EventHandler? Ended;
     /// <summary>
     /// Occurs when playback starts.
@@ -306,11 +347,16 @@ public class SKVideo(FFCodec2Skia video) : IDisposable
     /// Occurs when playback stops.
     /// </summary>
     public event EventHandler? Stopped;
+    /// <summary>
+    /// Occurs when decoding fails. Playback stops.
+    /// </summary>
+    public event EventHandler<Exception>? Faulted;
 
     /// <summary>
     /// Occurs when the next video frame is ready to be rendered.
     /// </summary>
     /// <remarks>
+    /// The event is raised on a thread-pool thread. While a handler runs, newer frames are skipped.
     /// The supplied <see cref="SKBitmap"/> is owned and reused by the
     /// <see cref="SKVideo"/> instance. Event handlers must not dispose it or
     /// retain a reference after the event returns. Clone the bitmap if it
@@ -325,10 +371,10 @@ public class SKVideo(FFCodec2Skia video) : IDisposable
 
     /// <inheritdoc cref="SKVideo(Stream, SKImageInfo, IDictionary{string, string})"/>
     public SKVideo(Stream stream, HW.DeviceType deviceType) : this(FFCodec2Skia.Create(stream, deviceType)!) { }
-    
+
     /// <inheritdoc cref="SKVideo(Stream, SKImageInfo, IDictionary{string, string})"/>
     public SKVideo(Stream stream, SKImageInfo info) : this(FFCodec2Skia.Create(stream, info)!) { }
-   
+
     /// <summary>
     /// Initializes a new <see cref="SKVideo"/> instance that decodes video frames from the specified
     /// <see cref="Stream"/> using the requested output image format and codec options.
@@ -347,8 +393,11 @@ public class SKVideo(FFCodec2Skia video) : IDisposable
     /// <paramref name="stream"/> or <paramref name="codecOptions"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// The media could not be opened, no suitable video stream was found, or
+    /// No suitable video stream was found, or
     /// <paramref name="info"/> specifies an unsupported <see cref="SKColorType"/>.
+    /// </exception>
+    /// <exception cref="Exceptions.FFmpegException">
+    /// The media could not be opened.
     /// </exception>
     public SKVideo(Stream stream, SKImageInfo info, IDictionary<string, string> codecOptions)
         : this(FFCodec2Skia.Create(stream, info, codecOptions)!) { }
@@ -382,8 +431,11 @@ public class SKVideo(FFCodec2Skia video) : IDisposable
     /// <paramref name="io"/> or <paramref name="codecOptions"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// The media could not be opened, no suitable video stream was found, or
+    /// No suitable video stream was found, or
     /// <paramref name="info"/> specifies an unsupported <see cref="SKColorType"/>.
+    /// </exception>
+    /// <exception cref="Exceptions.FFmpegException">
+    /// The media could not be opened.
     /// </exception>
     public SKVideo(IO.IOContext io, SKImageInfo info, IDictionary<string, string> codecOptions)
         : this(FFCodec2Skia.Create(io, info, codecOptions)!) { }
@@ -421,26 +473,48 @@ public class SKVideo(FFCodec2Skia video) : IDisposable
     /// <see langword="true"/> to release managed resources; otherwise, <see langword="false"/>.
     /// </param>
     /// <remarks>
-    /// When disposing, playback is stopped and any internally allocated frame buffers
-    /// are released. Once disposed, the instance cannot be used again.
+    /// When disposing, playback is stopped and the decoder is released once the decoding thread has finished.
+    /// The frame buffers are released once a running <see cref="FrameReadyToRender"/> handler has returned.
+    /// Dispose may be called from any thread, including event handlers.
     /// </remarks>
     protected virtual void Dispose(bool disposing)
     {
-        if (!Disposed)
+        if (Interlocked.Exchange(ref disposed, 1) != 0)
+            return;
+        if (!disposing)
+            return;
+
+        Task worker;
+        lock (_lock)
         {
-            if (disposing)
-            {
-                cts.Cancel();
-                cts.Dispose();
-                backbuffer?.Dispose();
-                frame?.Dispose();
-                bool entered = Monitor.TryEnter(_lock, 1000);
-                video.Dispose();
-                if (entered)
-                    Monitor.Exit(_lock);
-            }
-            Disposed = true;
+            cts.Cancel();
+            worker = decodingTask;
         }
+
+        if (Task.CurrentId == worker.Id)
+            _ = worker.ContinueWith(_ => ReleaseResources(), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+        else
+        {
+            try { worker.Wait(); } catch { /* the loop reports its own errors */ }
+            ReleaseResources();
+        }
+    }
+
+    private void ReleaseResources()
+    {
+        lock (_lock)
+        {
+            video.Dispose();
+            cts.Dispose();
+        }
+        SKBitmap? back = backbuffer, front = frame;
+        backbuffer = frame = null;
+        // A FrameReadyToRender handler may still be drawing one of the buffers.
+        _ = eventTask.ContinueWith(_ =>
+        {
+            back?.Dispose();
+            front?.Dispose();
+        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
     }
 
     /// <summary>
@@ -448,7 +522,6 @@ public class SKVideo(FFCodec2Skia video) : IDisposable
     /// </summary>
     public void Dispose()
     {
-        // Ändern Sie diesen Code nicht. Fügen Sie Bereinigungscode in der Methode "Dispose(bool disposing)" ein.
         Dispose(disposing: true);
         GC.SuppressFinalize(this);
     }
