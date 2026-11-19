@@ -1,7 +1,4 @@
 ﻿using FFmpeg.Utils;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace FFmpeg.Skia;
 
@@ -30,7 +27,7 @@ public static partial class Extensions
             SKSamplingOptions sampling,
             SKPaint? paint = null)
         {
-            using var image = frame.AsSKImage();
+            using SKImage image = frame.AsSKImage();
             canvas.DrawImage(image, p, sampling, paint);
         }
 
@@ -59,7 +56,7 @@ public static partial class Extensions
             SKSamplingOptions sampling,
             SKPaint? paint = null)
         {
-            using var image = frame.AsSKImage();
+            using SKImage image = frame.AsSKImage();
             canvas.DrawImage(image, source, dest, sampling, paint);
         }
 
@@ -84,7 +81,7 @@ public static partial class Extensions
             SKSamplingOptions sampling,
             SKPaint? paint = null)
         {
-            using var image = frame.AsSKImage();
+            using SKImage image = frame.AsSKImage();
             canvas.DrawImage(image, dest, sampling, paint);
         }
 
@@ -113,7 +110,7 @@ public static partial class Extensions
             SKSamplingOptions sampling,
             SKPaint? paint = null)
         {
-            using var image = frame.AsSKImage();
+            using SKImage image = frame.AsSKImage();
             canvas.DrawImage(image, x, y, sampling, paint);
         }
 

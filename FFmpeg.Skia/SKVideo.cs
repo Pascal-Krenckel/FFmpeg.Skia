@@ -308,7 +308,8 @@ public class SKVideo(FFCodec2Skia video) : IDisposable
                     FFCodecFrameInfo info = frameInfo; // Capture frameInfo
                     eventTask = Task.Run(() =>
                     {
-                        try { handler(this, (f, info)); }
+                        try
+                        { handler(this, (f, info)); }
                         catch { /* an exception in a render handler does not stop the player */ }
                     });
                     (frame, backbuffer) = (backbuffer, frame); // Swap buffers; the handler's bitmap is not decoded into until it returns
@@ -504,7 +505,9 @@ public class SKVideo(FFCodec2Skia video) : IDisposable
             _ = worker.ContinueWith(_ => ReleaseResources(), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
         else
         {
-            try { worker.Wait(); } catch { /* the loop reports its own errors */ }
+            try
+            { worker.Wait(); }
+            catch { /* the loop reports its own errors */ }
             ReleaseResources();
         }
     }

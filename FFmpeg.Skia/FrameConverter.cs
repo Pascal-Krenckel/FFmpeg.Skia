@@ -220,7 +220,7 @@ internal static class ConverterPool
     {
         if (pool.TryTake(out FrameConverter? converter))
         {
-            Interlocked.Decrement(ref pooled);
+            _ = Interlocked.Decrement(ref pooled);
             return new Lease(converter);
         }
         return new Lease(new FrameConverter());
@@ -232,7 +232,7 @@ internal static class ConverterPool
             pool.Add(converter);
         else
         {
-            Interlocked.Decrement(ref pooled);
+            _ = Interlocked.Decrement(ref pooled);
             converter.Dispose();
         }
     }

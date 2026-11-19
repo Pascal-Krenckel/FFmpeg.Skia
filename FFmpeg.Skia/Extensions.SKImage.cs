@@ -214,16 +214,13 @@ public static partial class Extensions
     /// format, or the image's pixel data cannot be accessed (for example, because
     /// it is GPU-backed).
     /// </exception>
-    public static void CopyTo(this SKImage image, AVFrame frame)
-    {
-        WithImagePixels(image, (pixels, rowBytes, info) =>
-        {
-            PrepareTarget(frame, info.Width, info.Height, info.ColorType.ToPixelFormat());
-            using ConverterPool.Lease lease = ConverterPool.Rent();
-            FrameConverter converter = lease.Converter;
-            FrameInterop.ReadIntoFrame(pixels, rowBytes, info, frame, converter);
-        });
-    }
+    public static void CopyTo(this SKImage image, AVFrame frame) => WithImagePixels(image, (pixels, rowBytes, info) =>
+                                                                         {
+                                                                             PrepareTarget(frame, info.Width, info.Height, info.ColorType.ToPixelFormat());
+                                                                             using ConverterPool.Lease lease = ConverterPool.Rent();
+                                                                             FrameConverter converter = lease.Converter;
+                                                                             FrameInterop.ReadIntoFrame(pixels, rowBytes, info, frame, converter);
+                                                                         });
 
     private delegate void PixelsAction(IntPtr pixels, int rowBytes, SKImageInfo info);
 

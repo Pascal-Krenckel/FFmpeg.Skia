@@ -31,22 +31,22 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
     /// <summary>Display time of a frame without duration or timestamps.</summary>
     private static readonly TimeSpan DefaultFrameDelay = TimeSpan.FromMilliseconds(100);
 
-    readonly MediaSource source;
-    readonly AVFrame frame;
-    readonly FrameConverter converter;
-    readonly int videoStreamIndex;
+    private readonly MediaSource source;
+    private readonly AVFrame frame;
+    private readonly FrameConverter converter;
+    private readonly int videoStreamIndex;
     // Three buffers: the shown frame, the frame shown before it (a render loop may still be drawing it) and the
     // buffer being decoded into. A frame's buffer is only written again two frames after it was replaced.
-    SKBitmap frontBuffer, previousBuffer, backBuffer;
-    readonly FFmpegWorkQueue? workQueue;
-    CancellationTokenSource? cts;
-    CancellableWorkItem? asyncOperation;
-    Task decodingTask = Task.CompletedTask;
-    Task handlerTask = Task.CompletedTask;
-    TaskCompletionSource<bool> manualOperation = CompletedOperation();
-    readonly object stateLock = new();
-    int decodingState = 0;
-    int released = 0;
+    private SKBitmap previousBuffer, backBuffer;
+    private readonly FFmpegWorkQueue? workQueue;
+    private CancellationTokenSource? cts;
+    private CancellableWorkItem? asyncOperation;
+    private Task decodingTask = Task.CompletedTask;
+    private Task handlerTask = Task.CompletedTask;
+    private TaskCompletionSource<bool> manualOperation = CompletedOperation();
+    private readonly object stateLock = new();
+    private int decodingState = 0;
+    private int released = 0;
 
     /// <summary>
     /// Gets the most recently decoded frame.
@@ -66,7 +66,7 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
     /// <see cref="Rotation"/>.
     /// </para>
     /// </remarks>
-    public SKBitmap Frame => frontBuffer;
+    public SKBitmap Frame { get; private set; }
 
     /// <inheritdoc cref="FFCodec2Skia.Rotation"/>
     public int Rotation { get; }
@@ -101,7 +101,7 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(videoStreamIndex), videoStreamIndex, "The media does not contain this (or any) video stream.");
         if (source.Streams[videoStreamIndex].CodecParameters.MediaType != MediaType.Video)
             throw new ArgumentException($"Stream {videoStreamIndex} is not a video stream.", nameof(videoStreamIndex));
-        foreach (var stream in source.Streams)
+        foreach (AVStream stream in source.Streams)
             stream.Discard = Formats.DiscardFlags.All;
         source.Streams[videoStreamIndex].Discard = Formats.DiscardFlags.Default;
         this.source = source;
@@ -110,7 +110,7 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
         // allocated last: nothing native leaks if the checks above throw
         SampleAspectRatio = source.Streams[videoStreamIndex].GetSampleAspectRatio();
         Rotation = source.Streams[videoStreamIndex].GetDisplayRotation();
-        frontBuffer = new SKBitmap();
+        Frame = new SKBitmap();
         previousBuffer = new SKBitmap();
         backBuffer = new SKBitmap();
         frame = AVFrame.Allocate();
@@ -218,7 +218,7 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
     }
 
     /// <summary>Shows the decoded frame; the previously shown one is kept untouched for one more frame.</summary>
-    private void Present() => (frontBuffer, previousBuffer, backBuffer) = (backBuffer, frontBuffer, previousBuffer);
+    private void Present() => (Frame, previousBuffer, backBuffer) = (backBuffer, Frame, previousBuffer);
 
     private FFCodecFrameInfo CurrentTiming()
     {
@@ -228,11 +228,9 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
 
     private async Task<(AVResult32, FFCodecFrameInfo)> DecodeStepAsync(SKBitmap target, CancellationToken token)
     {
-        AVResult32 result;
-        if (workQueue != null)
-            result = await (asyncOperation = workQueue.QueueFFmpegWorkItem(() => DecodeInto(target), token)).ConfigureAwait(false);
-        else
-            result = DecodeInto(target);
+        AVResult32 result = workQueue != null
+            ? await (asyncOperation = workQueue.QueueFFmpegWorkItem(() => DecodeInto(target), token)).ConfigureAwait(false)
+            : DecodeInto(target);
         return result.IsError ? (result, default) : (result, CurrentTiming());
     }
 
@@ -294,7 +292,7 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
         CheckAsync();
         using (BeginManualOperation())
         {
-            (var result, var info) = await DecodeStepAsync(backBuffer, token).ConfigureAwait(false);
+            (AVResult32 result, FFCodecFrameInfo info) = await DecodeStepAsync(backBuffer, token).ConfigureAwait(false);
             if (result == AVResult32.EndOfFile)
                 return false;
             result.ThrowIfError();
@@ -327,7 +325,7 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
     {
         using (BeginManualOperation())
         {
-            var result = source.SeekExactly(time, videoStreamIndex);
+            AVResult32 result = source.SeekExactly(time, videoStreamIndex);
             if (!result.IsError)
                 FrameInfo = default;
             return result;
@@ -358,7 +356,7 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
         CheckAsync();
         using (BeginManualOperation())
         {
-            var result = await SeekStepAsync(time, token).ConfigureAwait(false);
+            AVResult32 result = await SeekStepAsync(time, token).ConfigureAwait(false);
             if (!result.IsError)
                 FrameInfo = default;
             return result;
@@ -449,7 +447,7 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
 
             while (!token.IsCancellationRequested)
             {
-                (var result, var info) = await DecodeStepAsync(backBuffer, token).ConfigureAwait(false);
+                (AVResult32 result, FFCodecFrameInfo info) = await DecodeStepAsync(backBuffer, token).ConfigureAwait(false);
                 if (result == AVResult32.EndOfFile)
                 {
                     if (looping && framesSinceStart > 1)
@@ -589,7 +587,7 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
         {
             // Only Manual -> None: if the image was disposed meanwhile, the state stays Disposed.
             _ = Interlocked.CompareExchange(ref image.decodingState, (int)DecodingState.None, (int)DecodingState.Manual);
-            operation.TrySetResult(true); // lets Dispose continue
+            _ = operation.TrySetResult(true); // lets Dispose continue
         }
     }
 
@@ -643,7 +641,7 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
                 return null;
             operation = manualOperation.Task;
         }
-        asyncOperation?.Cancel();
+        _ = (asyncOperation?.Cancel());
         cts?.Cancel();
         return Task.WhenAll(decodingTask, operation);
     }
@@ -656,7 +654,7 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
         frame.Dispose();
         converter.Dispose();
         cts?.Dispose();
-        SKBitmap front = frontBuffer, previous = previousBuffer, back = backBuffer;
+        SKBitmap front = Frame, previous = previousBuffer, back = backBuffer;
         // A ReadyToRender handler may still use Frame.
         _ = handlerTask.ContinueWith(_ =>
         {
@@ -680,7 +678,9 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
         Task? pending = BeginDispose();
         if (pending == null)
             return;
-        try { pending.Wait(); } catch { /* reported by the operations themselves */ }
+        try
+        { pending.Wait(); }
+        catch { /* reported by the operations themselves */ }
         Release();
     }
 
@@ -697,7 +697,9 @@ public sealed class SKAnimatedImage : IDisposable, IAsyncDisposable
         Task? pending = BeginDispose();
         if (pending == null)
             return;
-        try { await pending.ConfigureAwait(false); } catch { /* reported by the operations themselves */ }
+        try
+        { await pending.ConfigureAwait(false); }
+        catch { /* reported by the operations themselves */ }
         Release();
     }
 

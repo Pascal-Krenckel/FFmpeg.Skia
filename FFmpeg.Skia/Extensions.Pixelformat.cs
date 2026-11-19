@@ -1,7 +1,4 @@
 ﻿using FFmpeg.Images;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace FFmpeg.Skia;
 
