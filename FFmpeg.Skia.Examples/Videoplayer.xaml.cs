@@ -1,4 +1,5 @@
 ﻿#define Copy
+using FFmpeg.AutoGen;
 using SkiaSharp;
 using System.Windows;
 using System.Windows.Input;
@@ -26,7 +27,7 @@ public partial class Videoplayer : Window
     }
 
     private void Skvideo_FrameReadyToRender(object? sender, (SkiaSharp.SKBitmap frame, FFCodecFrameInfo frameInfo) e)
-    {
+    {        
 #if Copy
         if (bitmap.DrawsNothing)
             _ = bitmap.TryAllocPixels(e.frame.Info);
@@ -44,6 +45,7 @@ public partial class Videoplayer : Window
         e.Surface.Canvas.Clear();
         if (bitmap != null && !bitmap.DrawsNothing)
         {
+            
             SKRectI dest = e.Surface.Canvas.DeviceClipBounds.AspectFit(bitmap.Info.Size);
             e.Surface.Canvas.DrawBitmap(bitmap, dest, new SKSamplingOptions(SKCubicResampler.Mitchell)); // DrawBitmap does not have the right override, yet.          
             e.Surface.Canvas.DrawText($"{frameInfo.TimeStamp:mm\\:ss} / {skvideo.Duration:mm\\:ss}",

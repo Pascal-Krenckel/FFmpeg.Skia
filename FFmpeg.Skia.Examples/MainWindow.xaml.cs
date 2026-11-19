@@ -1,4 +1,6 @@
-﻿using System.Windows;
+﻿using FFmpeg.AutoGen;
+using SkiaSharp;
+using System.Windows;
 
 namespace FFmpeg.Skia.Examples;
 /// <summary>
@@ -18,11 +20,13 @@ public partial class MainWindow : Window
 
     private void Video_to_draw_FrameReadyToRender(object? sender, (SkiaSharp.SKBitmap frame, FFCodecFrameInfo frameInfo) e)
     {
-
+       
     }
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
+        Devices.Device.ReInitAudioOutputDevices();
+        var list = Devices.Device.AudioOutputDevices;
     }
 
     private void Button_PlaySKVideo(object sender, RoutedEventArgs e)
@@ -40,6 +44,12 @@ public partial class MainWindow : Window
     private void Button_PlayMediaSource(object sender, RoutedEventArgs e)
     {
         MediaSourceWindow w = new();
+        _ = w.ShowDialog();
+    }
+
+    private void Button_PlaySKAnimatedImage(object sender, RoutedEventArgs e)
+    {
+        SKAnimatedImageWindow w = new();
         _ = w.ShowDialog();
     }
 }

@@ -7,10 +7,11 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<UseWPF>true</UseWPF>
 		<SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="FFmpegDotNet.bin.winx64" Version="8.1.2" />
+		<PackageReference Include="FFmpegDotNet.bin.winx64" Version="8.1.2.4" />
 		<PackageReference Include="SkiaSharp.Views.WPF" Version="4.150.1" />
 	</ItemGroup>
 
