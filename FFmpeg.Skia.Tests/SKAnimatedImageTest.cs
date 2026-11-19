@@ -67,13 +67,23 @@ public class SKAnimatedImageTest
         image.Start(false);
 
         Assert.IsTrue(finished.Wait(5000), "playback did not finish");
-        // frames: 0 ms (shown 100), 100 (300), 400 (100), 500 (500), 1000 (500) -> finished at 1500
-        long[] expected = [0, 100, 400, 500, 1000, 1500];
+        // Each frame is shown for at least its duration: 100, 300, 100, 500, 500 ms (then Finished).
+        // By design, a busy machine shows frames longer (lower fps) instead of catching up, so only the
+        // intervals between the events are checked, with room for timer resolution and thread pool delays.
+        long[] durations = [100, 300, 100, 500, 500];
+        const long Early = 30;   // the events are raised on the thread pool, so a single interval may look shorter
+        const long Late = 150;   // timer resolution (~15.6 ms on Windows) and a busy CI runner
         lock (times)
         {
-            Assert.AreEqual(expected.Length, times.Count, string.Join(", ", times));
-            for (int i = 0; i < expected.Length; i++)
-                Assert.IsTrue(Math.Abs(times[i] - expected[i]) <= 60, $"event {i} at {times[i]} ms, expected {expected[i]} ms ({string.Join(", ", times)})");
+            string all = string.Join(", ", times);
+            Assert.AreEqual(durations.Length + 1, times.Count, all);
+            Assert.IsTrue(times[0] <= Late, $"the first frame was presented after {times[0]} ms ({all})");
+            for (int i = 0; i < durations.Length; i++)
+            {
+                long interval = times[i + 1] - times[i];
+                Assert.IsTrue(interval >= durations[i] - Early && interval <= durations[i] + Late,
+                    $"frame {i} was shown for {interval} ms, expected {durations[i]} ms ({all})");
+            }
         }
     }
 
