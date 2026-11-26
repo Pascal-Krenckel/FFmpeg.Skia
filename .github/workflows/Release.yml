@@ -57,7 +57,7 @@ jobs:
           ls -l release
 
       - name: Upload release files
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-ffmpeg${{ matrix.ffmpeg }}
           path: release/*
